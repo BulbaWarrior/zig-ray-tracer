@@ -28,7 +28,27 @@ pub fn main() !void {
         .center = vec3(.{ 0, -100.5, -1 }),
         .radius = 100,
     } });
-    try Camera.render(&world, stdout, stderr, rng, ally);
+    var thread_pool: std.Thread.Pool = undefined;
+    try thread_pool.init(.{ .allocator = ally });
+    defer thread_pool.deinit();
+
+    const pixels = try ally.alloc(Vec3, Camera.image_width * Camera.image_height);
+    defer ally.free(pixels);
+
+    try Camera.render(&world, stderr, rng, &thread_pool, pixels);
+
+    try stdout.print("P6\n{d} {d}\n255\n", .{ Camera.image_width, Camera.image_height });
+    for (0..pixels.len) |i| {
+        var pixel = &pixels[i];
+        pixel.mut_mul(255.999);
+        const r: u8 = @intFromFloat(pixel.x());
+        const g: u8 = @intFromFloat(pixel.y());
+        const b: u8 = @intFromFloat(pixel.z());
+        const data: [3]u8 = .{ r, g, b };
+        const written = try stdout.write(&data);
+        std.debug.assert(written == 3);
+    }
+    try stdout.flush();
 }
 
 const Bounds = struct {
@@ -256,27 +276,24 @@ const Camera = struct {
     const samples_per_pixel = 200;
     const max_depth = 50;
 
-    fn render(world: *const Objects, writer: *std.Io.Writer, progress_writer: *std.Io.Writer, rng: std.Random, gpa: Allocator) !void {
+    fn render(world: *const Objects, progress_writer: *std.Io.Writer, rng: std.Random, thread_pool: *std.Thread.Pool, image_buf: []Vec3) !void {
         comptime std.debug.assert(image_height > 1);
-
-        const image_buf = try gpa.alloc(Vec3, image_width * image_height);
-        var thread_pool: std.Thread.Pool = undefined;
-        try thread_pool.init(.{ .allocator = gpa });
-        defer thread_pool.deinit();
+        if (image_buf.len < image_width * image_height) {
+            return error.ImageBufferTooSmall;
+        }
 
         // calculate
         try progress_writer.print("caclulating...\n", .{});
         try progress_writer.flush();
 
         var wg = std.Thread.WaitGroup{};
+        // NOTE: this uses the same seed for every pixel
         var noise: [samples_per_pixel * 2]f64 = undefined; // TODO: vectorize / compute at comptime?
         for (0..noise.len) |i| {
             noise[i] = rng.float(f64);
         }
 
         for (0..image_height) |y| {
-            // try progress_writer.print("\rScanlines remaining: {d}", .{image_height - y});
-            // try progress_writer.flush();
             for (0..image_width) |x| {
                 const PoolTask = struct {
                     fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Vec3, task_noise: *[samples_per_pixel * 2]f64, task_world: *const Objects) void {
@@ -310,12 +327,5 @@ const Camera = struct {
 
         try progress_writer.print("calculation finished, writing\n", .{});
         try progress_writer.flush();
-        // write
-        try writer.print("P6\n{d} {d}\n255\n", .{ image_width, image_height });
-        for (image_buf) |pixel_color| {
-            try pixel_color.write_color(writer);
-        }
-
-        try writer.flush();
     }
 };
