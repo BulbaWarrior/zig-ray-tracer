@@ -9,6 +9,45 @@ pub fn new(inner: @Vector(3, f64)) Vec3 {
     };
 }
 
+/// all values are in [0, 1)
+pub fn random() Vec3 {
+    // TODO: ask for noise?
+    return .{ .inner = .{
+        std.crypto.random.float(f64),
+        std.crypto.random.float(f64),
+        std.crypto.random.float(f64),
+    } };
+}
+
+pub fn random_unit() Vec3 {
+    while (true) {
+        var out = random().sub(&new(@splat(0.5))).mul(2);
+        const len_squared = out.length_squared();
+        if (1e-160 < len_squared and len_squared <= 1) {
+            out.mut_div(@sqrt(len_squared));
+            return out;
+        }
+    }
+}
+
+pub fn clamp(self: *const Vec3, min: f64, max: f64) Vec3 {
+    const max_v: @TypeOf(self.inner) = @splat(max);
+    const min_v: @TypeOf(self.inner) = @splat(min);
+
+    const clamped_above = @min(self.inner, max_v);
+    const clamped = @max(clamped_above, min_v);
+    return .{
+        .inner = clamped,
+    };
+}
+
+pub fn unit_on_hemisphere(normal: *const Vec3) Vec3 {
+    var out = random_unit();
+    if (out.dot(normal) < 0) {
+        out.mut_mul(-1);
+    }
+    return out;
+}
 pub fn eq(self: *const Vec3, other: *const Vec3) bool {
     return @reduce(.And, self.inner == other.inner);
 }

@@ -73,15 +73,24 @@ const Ray = struct {
         return self.orig.add(&self.dir.mul(t));
     }
 
-    fn color(self: *const Ray, world: *const Objects) Vec3 {
+    fn color(self: *const Ray, max_depth: usize, world: *const Objects) Vec3 {
+        if (max_depth <= 0) {
+            return vec3(@splat(0));
+        }
+
         const bounds = Bounds{
-            .min = 0,
+            .min = 0.001,
             .max = std.math.inf(f64),
         };
 
         if (world.hit(self, bounds)) |record| {
             const normal = record.normal;
-            return normal.add(&vec3(@splat(1))).mul(0.5);
+            const bounce_direction = normal.add(&Vec3.random_unit());
+            const bounce = Ray{
+                .orig = record.point,
+                .dir = bounce_direction,
+            };
+            return bounce.color(max_depth - 1, world).mul(0.5);
         }
 
         const white = vec3(.{ 1, 1, 1 });
@@ -244,7 +253,8 @@ const Camera = struct {
     const pixel00_loc =
         viewport_upper_left.add(&pixel_delta_u.add(&pixel_delta_v).mul(0.5));
 
-    const samples_per_pixel = 1000;
+    const samples_per_pixel = 200;
+    const max_depth = 50;
 
     fn render(world: *const Objects, writer: *std.Io.Writer, progress_writer: *std.Io.Writer, rng: std.Random, gpa: Allocator) !void {
         comptime std.debug.assert(image_height > 1);
@@ -259,7 +269,7 @@ const Camera = struct {
         try progress_writer.flush();
 
         var wg = std.Thread.WaitGroup{};
-        var noise: [samples_per_pixel]f64 = undefined; // TODO: vectorize / compute at comptime?
+        var noise: [samples_per_pixel * 2]f64 = undefined; // TODO: vectorize / compute at comptime?
         for (0..noise.len) |i| {
             noise[i] = rng.float(f64);
         }
@@ -269,7 +279,7 @@ const Camera = struct {
             // try progress_writer.flush();
             for (0..image_width) |x| {
                 const PoolTask = struct {
-                    fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Vec3, task_noise: *[samples_per_pixel]f64, task_world: *const Objects) void {
+                    fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Vec3, task_noise: *[samples_per_pixel * 2]f64, task_world: *const Objects) void {
                         // I guess rng is now raced?
                         const pixel_center = pixel00_loc.add(&pixel_delta_u.mul(@floatFromInt(pixel_x))).add(&pixel_delta_v.mul(@floatFromInt(pixel_y)));
                         const ray_direction = pixel_center.sub(&cam_center);
@@ -282,9 +292,9 @@ const Camera = struct {
 
                         for (0..samples_per_pixel) |i| {
                             // sample in square distribution
-                            const offset = vec3(.{ (task_noise[i] - 0.5) * pixel_delta_u.x(), (task_noise[i] - 0.5) * pixel_delta_v.y(), 0 });
+                            const offset = pixel_delta_u.mul(task_noise[i] - 0.5).add(&pixel_delta_v.mul(task_noise[2 * i] - 0.5));
                             ray.dir = ray_direction.add(&offset);
-                            pixel_color.mut_add(&ray.color(task_world));
+                            pixel_color.mut_add(&ray.color(max_depth, task_world));
                         }
                         pixel_color.mut_div(samples_per_pixel);
                         pixel.* = pixel_color;
