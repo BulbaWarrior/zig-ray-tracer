@@ -9,6 +9,10 @@ pub fn new(inner: @Vector(3, f64)) Vec3 {
     };
 }
 
+pub fn linear_to_gamma(self: *Vec3) void {
+    self.inner = @sqrt(self.inner);
+}
+
 /// all values are in [0, 1)
 pub fn random() Vec3 {
     // TODO: ask for noise?
@@ -30,6 +34,11 @@ pub fn random_unit() Vec3 {
     }
 }
 
+pub fn near_zero(self: *Vec3) bool {
+    const s: @TypeOf(self.inner) = @splat(1e-8);
+    return @reduce(.And, self.inner < s);
+}
+
 pub fn clamp(self: *const Vec3, min: f64, max: f64) Vec3 {
     const max_v: @TypeOf(self.inner) = @splat(max);
     const min_v: @TypeOf(self.inner) = @splat(min);
@@ -48,6 +57,11 @@ pub fn unit_on_hemisphere(normal: *const Vec3) Vec3 {
     }
     return out;
 }
+
+pub fn reflect(self: *const Vec3, normal: *const Vec3) Vec3 {
+    return self.sub(&normal.mul(2 * self.dot(normal)));
+}
+
 pub fn eq(self: *const Vec3, other: *const Vec3) bool {
     return @reduce(.And, self.inner == other.inner);
 }
@@ -134,14 +148,4 @@ pub fn cross(self: *const Vec3, other: *const Vec3) Vec3 {
     return .{
         .inner = res,
     };
-}
-
-pub fn write_color(self: *const Vec3, writer: *std.Io.Writer) !void {
-    const rbyte: u8 = @intFromFloat(255.999 * self.x());
-    const gbyte: u8 = @intFromFloat(255.999 * self.y());
-    const bbyte: u8 = @intFromFloat(255.999 * self.z());
-
-    const bytes: [3]u8 = .{ rbyte, gbyte, bbyte };
-    _ = try writer.write(&bytes);
-    // return writer.print("{b}{b}{b}\n", .{ rbyte, gbyte, bbyte });
 }

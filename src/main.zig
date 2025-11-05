@@ -1,6 +1,8 @@
 const std = @import("std");
 const ray_tracing = @import("ray_tracing");
 
+const Allocator = std.mem.Allocator;
+
 const Vec3 = @import("vec3.zig");
 const vec3 = Vec3.new;
 
@@ -23,11 +25,39 @@ pub fn main() !void {
     var prng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
     const rng = prng.random();
 
-    try world.append(ally, .{ .sphere = .{ .center = vec3(.{ 0, 0, -1 }), .radius = 0.5 } });
-    try world.append(ally, .{ .sphere = .{
+    const material_ground = Material{
+        .lambertian = .{ .albedo = vec3(.{ 0.8, 0.8, 0.0 }) },
+    };
+    const material_left = Material{
+        .metal = .{ .albedo = vec3(.{ 0.8, 0.8, 0.8 }) },
+    };
+    const material_center = Material{
+        .lambertian = .{ .albedo = vec3(.{ 0.1, 0.2, 0.5 }) },
+    };
+    const material_right = Material{
+        .metal = .{ .albedo = vec3(.{ 0.8, 0.6, 0.2 }) },
+    };
+
+    try world.append(ally, .{ .material = material_ground, .geometry = .{ .sphere = .{
         .center = vec3(.{ 0, -100.5, -1 }),
         .radius = 100,
-    } });
+    } } });
+
+    try world.append(ally, .{ .material = material_left, .geometry = .{ .sphere = .{
+        .center = vec3(.{ -1, 0, -1 }),
+        .radius = 0.5,
+    } } });
+
+    try world.append(ally, .{ .material = material_center, .geometry = .{ .sphere = .{
+        .center = vec3(.{ 0, 0, -1.2 }),
+        .radius = 0.5,
+    } } });
+
+    try world.append(ally, .{ .material = material_right, .geometry = .{ .sphere = .{
+        .center = vec3(.{ 1, 0, -1 }),
+        .radius = 0.5,
+    } } });
+
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
@@ -37,10 +67,14 @@ pub fn main() !void {
 
     try Camera.render(&world, stderr, rng, &thread_pool, pixels);
 
-    try stdout.print("P6\n{d} {d}\n255\n", .{ Camera.image_width, Camera.image_height });
+    const color_steps = 255;
+    try stdout.print("P6\n{d} {d}\n{d}\n", .{ Camera.image_width, Camera.image_height, color_steps });
     for (0..pixels.len) |i| {
         var pixel = &pixels[i];
-        pixel.mut_mul(255.999);
+        //dither
+        // pixel.* = pixel.add(&Vec3.random_unit().mul(0.05)).clamp(0, 1);
+        pixel.linear_to_gamma();
+        pixel.mut_mul(color_steps + 0.999);
         const r: u8 = @intFromFloat(pixel.x());
         const g: u8 = @intFromFloat(pixel.y());
         const b: u8 = @intFromFloat(pixel.z());
@@ -104,13 +138,12 @@ const Ray = struct {
         };
 
         if (world.hit(self, bounds)) |record| {
-            const normal = record.normal;
-            const bounce_direction = normal.add(&Vec3.random_unit());
-            const bounce = Ray{
-                .orig = record.point,
-                .dir = bounce_direction,
-            };
-            return bounce.color(max_depth - 1, world).mul(0.5);
+            const material = record.material;
+            const scatter_record = material.scatter(self, &record.hit);
+            const scattered = scatter_record.scattered;
+            const attenuation = scatter_record.attenuation;
+            const col = scattered.color(max_depth - 1, world).inner * attenuation.inner;
+            return vec3(col);
         }
 
         const white = vec3(.{ 1, 1, 1 });
@@ -158,12 +191,12 @@ const Sphere = struct {
     }
 };
 
-const Object = union(enum) {
+const Geometry = union(enum) {
     sphere: Sphere,
 
-    fn hit(self: *const Object, ray: *const Ray, bounds: Bounds) ?HitRecord {
+    pub fn hit(self: *const Geometry, ray: *const Ray, bounds: Bounds) ?HitRecord {
         const maybe_record: ?HitRecord = hit: switch (self.*) {
-            Object.sphere => |obj| {
+            Geometry.sphere => |obj| {
                 break :hit obj.hit(ray, bounds);
             },
         };
@@ -177,7 +210,51 @@ const Object = union(enum) {
     }
 };
 
-const Allocator = std.mem.Allocator;
+const Lambertian = struct {
+    albedo: Vec3,
+    pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) Material.ScatterRecord {
+        var scatter_direction = hit_record.normal.add(&Vec3.random_unit());
+        if (scatter_direction.near_zero()) {
+            scatter_direction = hit_record.normal;
+        }
+
+        return .{
+            .scattered = .{ .orig = hit_record.point, .dir = scatter_direction },
+            .attenuation = self.albedo,
+        };
+    }
+};
+
+const Metal = struct {
+    albedo: Vec3,
+    pub fn scatter(self: *const Metal, ray_in: *const Ray, hit_record: *const HitRecord) Material.ScatterRecord {
+        const reflected = ray_in.dir.reflect(&hit_record.normal);
+        return .{
+            .scattered = Ray{
+                .orig = hit_record.point,
+                .dir = reflected,
+            },
+            .attenuation = self.albedo,
+        };
+    }
+};
+
+const Material = union(enum) {
+    const ScatterRecord = struct { attenuation: Vec3, scattered: Ray };
+    lambertian: Lambertian,
+    metal: Metal,
+    pub fn scatter(self: *const Material, ray_in: *const Ray, hit_record: *const HitRecord) ScatterRecord {
+        switch (self.*) {
+            .lambertian => |l| return l.scatter(ray_in, hit_record),
+            .metal => |m| return m.scatter(ray_in, hit_record),
+        }
+    }
+};
+
+const Object = struct {
+    geometry: Geometry,
+    material: Material,
+};
 
 const Objects = struct {
     list: std.MultiArrayList(Object),
@@ -194,22 +271,30 @@ const Objects = struct {
         self.list.clearRetainingCapacity();
     }
 
-    fn hit(self: *const Objects, ray: *const Ray, bounds: Bounds) ?HitRecord {
+    fn hit(self: *const Objects, ray: *const Ray, bounds: Bounds) ?struct { hit: HitRecord, material: *Material } {
         const slice = self.list.slice();
         var closest_hit: ?HitRecord = null;
+        var closest_index: usize = undefined;
 
-        for (slice.items(.tags), slice.items(.data)) |tag, obj| {
+        for (slice.items(.geometry), 0..) |geom, i| {
             const cur_bounds = Bounds{ .min = bounds.min, .max = if (closest_hit) |h| h.t else bounds.max };
-            const record = switch (tag) {
-                Object.sphere => obj.sphere.hit(ray, cur_bounds),
+            const record = switch (geom) {
+                Geometry.sphere => geom.sphere.hit(ray, cur_bounds),
             };
 
             if (record) |rec| {
                 closest_hit = rec;
+                closest_index = i;
             }
         }
 
-        return closest_hit;
+        if (closest_hit) |rec| {
+            const material = &slice.items(.material)[closest_index];
+            return .{
+                .hit = rec,
+                .material = material,
+            };
+        } else return null;
     }
 };
 
@@ -233,7 +318,7 @@ test "basic usage" {
 }
 
 test "call through object" {
-    const obj = Object{ .sphere = Sphere{
+    const obj = Geometry{ .sphere = Sphere{
         .center = vec3(.{ 0, 0, -1 }),
         .radius = 0.5,
     } };
