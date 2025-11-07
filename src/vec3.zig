@@ -62,6 +62,28 @@ pub fn reflect(self: *const Vec3, normal: *const Vec3) Vec3 {
     return self.sub(&normal.mul(2 * self.dot(normal)));
 }
 
+fn reflectance(cosine: f64, refraction_coeff: f64) f64 {
+    // Shlick's approximation for reflectance
+    var r0 = (1 - refraction_coeff) / (1 + refraction_coeff);
+    r0 *= r0;
+    const b = 1 - cosine;
+    const b_5 = b * b * b * b * b;
+    return r0 + (1 - r0) * b_5;
+}
+
+pub fn refract(self: *const Vec3, normal: *const Vec3, refraction_coeff: f64) ?Vec3 {
+    const cos_theta = @min(self.mul(-1).dot(normal), 1.0);
+    const sin_theta = @sqrt(1 - cos_theta * cos_theta);
+
+    if (refraction_coeff * sin_theta > 1 or reflectance(cos_theta, refraction_coeff) > std.crypto.random.float(f64)) {
+        return null;
+    }
+
+    const out_perp = self.add(&normal.mul(cos_theta)).mul(refraction_coeff);
+    const out_parallel = normal.mul(-@sqrt(@abs(1 - out_perp.length_squared())));
+    return out_perp.add(&out_parallel);
+}
+
 pub fn eq(self: *const Vec3, other: *const Vec3) bool {
     return @reduce(.And, self.inner == other.inner);
 }

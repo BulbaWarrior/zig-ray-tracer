@@ -29,13 +29,17 @@ pub fn main() !void {
         .lambertian = .{ .albedo = vec3(.{ 0.8, 0.8, 0.0 }) },
     };
     const material_left = Material{
-        .metal = .{ .albedo = vec3(.{ 0.8, 0.8, 0.8 }) },
+        .dielectric = .{ .refraction_index = 1.5 },
     };
+    const material_bubble = Material{
+        .dielectric = .{ .refraction_index = 1.0 / 1.5 },
+    };
+
     const material_center = Material{
         .lambertian = .{ .albedo = vec3(.{ 0.1, 0.2, 0.5 }) },
     };
     const material_right = Material{
-        .metal = .{ .albedo = vec3(.{ 0.8, 0.6, 0.2 }) },
+        .metal = .{ .albedo = vec3(.{ 0.8, 0.6, 0.2 }), .fuzziness = 1 },
     };
 
     try world.append(ally, .{ .material = material_ground, .geometry = .{ .sphere = .{
@@ -46,6 +50,11 @@ pub fn main() !void {
     try world.append(ally, .{ .material = material_left, .geometry = .{ .sphere = .{
         .center = vec3(.{ -1, 0, -1 }),
         .radius = 0.5,
+    } } });
+
+    try world.append(ally, .{ .material = material_bubble, .geometry = .{ .sphere = .{
+        .center = vec3(.{ -1, 0, -1 }),
+        .radius = 0.4,
     } } });
 
     try world.append(ally, .{ .material = material_center, .geometry = .{ .sphere = .{
@@ -139,7 +148,11 @@ const Ray = struct {
 
         if (world.hit(self, bounds)) |record| {
             const material = record.material;
-            const scatter_record = material.scatter(self, &record.hit);
+            const scatter_record = if (material.scatter(self, &record.hit)) |scatter| scat: {
+                break :scat scatter;
+            } else {
+                return vec3(@splat(0));
+            };
             const scattered = scatter_record.scattered;
             const attenuation = scatter_record.attenuation;
             const col = scattered.color(max_depth - 1, world).inner * attenuation.inner;
@@ -212,7 +225,7 @@ const Geometry = union(enum) {
 
 const Lambertian = struct {
     albedo: Vec3,
-    pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) Material.ScatterRecord {
+    pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
         var scatter_direction = hit_record.normal.add(&Vec3.random_unit());
         if (scatter_direction.near_zero()) {
             scatter_direction = hit_record.normal;
@@ -227,8 +240,15 @@ const Lambertian = struct {
 
 const Metal = struct {
     albedo: Vec3,
-    pub fn scatter(self: *const Metal, ray_in: *const Ray, hit_record: *const HitRecord) Material.ScatterRecord {
-        const reflected = ray_in.dir.reflect(&hit_record.normal);
+    fuzziness: f64,
+    pub fn scatter(self: *const Metal, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
+        const fuzz = Vec3.random_unit().mul(self.fuzziness);
+        const reflected = ray_in.dir.reflect(&hit_record.normal).unit_vector().add(&fuzz);
+
+        if (reflected.dot(&hit_record.normal) < 0) {
+            return null;
+        }
+
         return .{
             .scattered = Ray{
                 .orig = hit_record.point,
@@ -239,14 +259,49 @@ const Metal = struct {
     }
 };
 
+const Dielectric = struct {
+    refraction_index: f64,
+
+    pub fn scatter(self: *const Dielectric, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
+        var ri: f64 = undefined;
+        if (hit_record.front_face) {
+            ri = 1 / self.refraction_index;
+        } else {
+            ri = self.refraction_index;
+        }
+
+        const unit_dir = ray_in.dir.unit_vector();
+        const refracted_dir = unit_dir.refract(&hit_record.normal, ri);
+        if (refracted_dir) |rd| {
+            const refracted = Ray{ .orig = hit_record.point, .dir = rd };
+
+            return .{
+                .scattered = refracted,
+                .attenuation = vec3(@splat(1)),
+            };
+        } else {
+            const reflected = Ray{
+                .orig = hit_record.point,
+                .dir = unit_dir.reflect(&hit_record.normal),
+            };
+            return .{
+                .scattered = reflected,
+                .attenuation = vec3(@splat(1)),
+            };
+        }
+    }
+};
+
 const Material = union(enum) {
     const ScatterRecord = struct { attenuation: Vec3, scattered: Ray };
     lambertian: Lambertian,
     metal: Metal,
-    pub fn scatter(self: *const Material, ray_in: *const Ray, hit_record: *const HitRecord) ScatterRecord {
+    dielectric: Dielectric,
+    pub fn scatter(self: *const Material, ray_in: *const Ray, hit_record: *const HitRecord) ?ScatterRecord {
         switch (self.*) {
             .lambertian => |l| return l.scatter(ray_in, hit_record),
             .metal => |m| return m.scatter(ray_in, hit_record),
+            .dielectric => |d| return d.scatter(ray_in, hit_record),
         }
     }
 };
