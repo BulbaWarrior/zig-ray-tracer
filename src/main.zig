@@ -3,8 +3,13 @@ const ray_tracing = @import("ray_tracing");
 
 const Allocator = std.mem.Allocator;
 
-const Vec3 = @import("vec3.zig");
-const vec3 = Vec3.new;
+const vector = @import("vec3.zig");
+const vec3 = vector.new;
+
+const Vec3 = vector.Vec3;
+const Color = vector.Vec3(.arb);
+
+const Material = @import("mats.zig").Material;
 
 pub fn main() !void {
     var stdout_buffer: [1024]u8 = undefined;
@@ -71,7 +76,7 @@ pub fn main() !void {
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
-    const pixels = try ally.alloc(Vec3, Camera.image_width * Camera.image_height);
+    const pixels = try ally.alloc(Color, Camera.image_width * Camera.image_height);
     defer ally.free(pixels);
 
     try Camera.render(&world, stderr, rng, &thread_pool, pixels);
@@ -120,23 +125,23 @@ const Bounds = struct {
     pub const universe = Bounds{ .min = -std.math.inf(f64), .max = std.math.inf(f64) };
 };
 
-const HitRecord = struct {
-    point: Vec3,
+pub const HitRecord = struct {
+    point: Vec3(.arb),
     /// always unit
-    normal: Vec3,
+    normal: Vec3(.unit),
     t: f64,
     front_face: bool,
 };
 
-const Ray = struct {
-    orig: Vec3,
-    dir: Vec3,
+pub const Ray = struct {
+    orig: Vec3(.arb),
+    dir: Vec3(.arb),
 
-    fn at(self: *const Ray, t: f64) Vec3 {
+    fn at(self: *const Ray, t: f64) Vec3(.arb) {
         return self.orig.add(&self.dir.mul(t));
     }
 
-    fn color(self: *const Ray, max_depth: usize, world: *const Objects) Vec3 {
+    fn color(self: *const Ray, max_depth: usize, world: *const Objects) Color {
         if (max_depth <= 0) {
             return vec3(@splat(0));
         }
@@ -185,18 +190,18 @@ const Ray = struct {
         }
 
         const hit_point = ray.at(root);
-        var normal = hit_point.sub(&sphere.center).div(sphere.radius);
+        var normal = hit_point.sub(&sphere.center).div(sphere.radius).as(.unit);
         const front_face = ray.dir.dot(&normal) < 0;
 
         if (!front_face) {
-            normal.mut_mul(-1);
+            normal.reverse();
         }
         return HitRecord{ .t = root, .normal = normal, .point = hit_point, .front_face = front_face };
     }
 };
 
 const Sphere = struct {
-    center: Vec3,
+    center: Vec3(.arb),
     radius: f64,
 
     fn hit(self: *const Sphere, ray: *const Ray, bounds: Bounds) ?HitRecord {
@@ -220,89 +225,6 @@ const Geometry = union(enum) {
         }
 
         return maybe_record;
-    }
-};
-
-const Lambertian = struct {
-    albedo: Vec3,
-    pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        var scatter_direction = hit_record.normal.add(&Vec3.random_unit());
-        if (scatter_direction.near_zero()) {
-            scatter_direction = hit_record.normal;
-        }
-
-        return .{
-            .scattered = .{ .orig = hit_record.point, .dir = scatter_direction },
-            .attenuation = self.albedo,
-        };
-    }
-};
-
-const Metal = struct {
-    albedo: Vec3,
-    fuzziness: f64,
-    pub fn scatter(self: *const Metal, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        const fuzz = Vec3.random_unit().mul(self.fuzziness);
-        const reflected = ray_in.dir.reflect(&hit_record.normal).unit_vector().add(&fuzz);
-
-        if (reflected.dot(&hit_record.normal) < 0) {
-            return null;
-        }
-
-        return .{
-            .scattered = Ray{
-                .orig = hit_record.point,
-                .dir = reflected,
-            },
-            .attenuation = self.albedo,
-        };
-    }
-};
-
-const Dielectric = struct {
-    refraction_index: f64,
-
-    pub fn scatter(self: *const Dielectric, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        var ri: f64 = undefined;
-        if (hit_record.front_face) {
-            ri = 1 / self.refraction_index;
-        } else {
-            ri = self.refraction_index;
-        }
-
-        const unit_dir = ray_in.dir.unit_vector();
-        const refracted_dir = unit_dir.refract(&hit_record.normal, ri);
-        if (refracted_dir) |rd| {
-            const refracted = Ray{ .orig = hit_record.point, .dir = rd };
-
-            return .{
-                .scattered = refracted,
-                .attenuation = vec3(@splat(1)),
-            };
-        } else {
-            const reflected = Ray{
-                .orig = hit_record.point,
-                .dir = unit_dir.reflect(&hit_record.normal),
-            };
-            return .{
-                .scattered = reflected,
-                .attenuation = vec3(@splat(1)),
-            };
-        }
-    }
-};
-
-const Material = union(enum) {
-    const ScatterRecord = struct { attenuation: Vec3, scattered: Ray };
-    lambertian: Lambertian,
-    metal: Metal,
-    dielectric: Dielectric,
-    pub fn scatter(self: *const Material, ray_in: *const Ray, hit_record: *const HitRecord) ?ScatterRecord {
-        switch (self.*) {
-            .lambertian => |l| return l.scatter(ray_in, hit_record),
-            .metal => |m| return m.scatter(ray_in, hit_record),
-            .dielectric => |d| return d.scatter(ray_in, hit_record),
-        }
     }
 };
 
@@ -366,10 +288,10 @@ test "basic usage" {
         .orig = vec3(@splat(0)),
         .dir = vec3(.{ 0, 0, -1 }),
     };
-    try objects.append(ally, .{ .sphere = .{ .center = vec3(.{ 0, 0, -1 }), .radius = 0.5 } });
+    try objects.append(ally, .{ .geometry = .{ .sphere = .{ .center = vec3(.{ 0, 0, -1 }), .radius = 0.5 } }, .material = .{ .lambertian = .{ .albedo = vec3(@splat(1.0)) } } });
     const rec = objects.hit(&ray, .{ .max = 1000, .min = -1000 });
 
-    std.debug.assert(rec.?.front_face == true);
+    std.debug.assert(rec.?.hit.front_face == true);
 }
 
 test "call through object" {
@@ -416,7 +338,7 @@ const Camera = struct {
     const samples_per_pixel = 200;
     const max_depth = 50;
 
-    fn render(world: *const Objects, progress_writer: *std.Io.Writer, rng: std.Random, thread_pool: *std.Thread.Pool, image_buf: []Vec3) !void {
+    fn render(world: *const Objects, progress_writer: *std.Io.Writer, rng: std.Random, thread_pool: *std.Thread.Pool, image_buf: []Color) !void {
         comptime std.debug.assert(image_height > 1);
         if (image_buf.len < image_width * image_height) {
             return error.ImageBufferTooSmall;
@@ -436,7 +358,7 @@ const Camera = struct {
         for (0..image_height) |y| {
             for (0..image_width) |x| {
                 const PoolTask = struct {
-                    fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Vec3, task_noise: *[samples_per_pixel * 2]f64, task_world: *const Objects) void {
+                    fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Color, task_noise: *[samples_per_pixel * 2]f64, task_world: *const Objects) void {
                         // I guess rng is now raced?
                         const pixel_center = pixel00_loc.add(&pixel_delta_u.mul(@floatFromInt(pixel_x))).add(&pixel_delta_v.mul(@floatFromInt(pixel_y)));
                         const ray_direction = pixel_center.sub(&cam_center);
