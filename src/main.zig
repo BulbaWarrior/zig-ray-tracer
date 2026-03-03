@@ -4,10 +4,10 @@ const ray_tracing = @import("ray_tracing");
 const Allocator = std.mem.Allocator;
 
 const vector = @import("vec3.zig");
-const vec3 = vector.new;
+const vec3 = vector.vec3;
 
 const Vec3 = vector.Vec3;
-const Color = vector.Vec3(.arb);
+const Color = vector.Vec3(.color);
 
 const Material = @import("mats.zig").Material;
 
@@ -26,9 +26,6 @@ pub fn main() !void {
     const ally = arena.allocator();
     var world = Objects{ .list = .empty };
     defer world.deinit(ally);
-
-    var prng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
-    const rng = prng.random();
 
     const material_ground = Material{
         .lambertian = .{ .albedo = vec3(.{ 0.8, 0.8, 0.0 }) },
@@ -79,7 +76,7 @@ pub fn main() !void {
     const pixels = try ally.alloc(Color, Camera.image_width * Camera.image_height);
     defer ally.free(pixels);
 
-    try Camera.render(&world, stderr, rng, &thread_pool, pixels);
+    try Camera.render(&world, stderr, &thread_pool, pixels);
 
     const color_steps = 255;
     try stdout.print("P6\n{d} {d}\n{d}\n", .{ Camera.image_width, Camera.image_height, color_steps });
@@ -138,12 +135,12 @@ pub const Ray = struct {
     dir: Vec3(.arb),
 
     fn at(self: *const Ray, t: f64) Vec3(.arb) {
-        return self.orig.add(&self.dir.mul(t));
+        return self.orig.add(self.dir.mul(t));
     }
 
     fn color(self: *const Ray, max_depth: usize, world: *const Objects) Color {
         if (max_depth <= 0) {
-            return vec3(@splat(0));
+            return vector.color(@splat(0));
         }
 
         const bounds = Bounds{
@@ -156,24 +153,24 @@ pub const Ray = struct {
             const scatter_record = if (material.scatter(self, &record.hit)) |scatter| scat: {
                 break :scat scatter;
             } else {
-                return vec3(@splat(0));
+                return vector.color(@splat(0));
             };
             const scattered = scatter_record.scattered;
             const attenuation = scatter_record.attenuation;
             const col = scattered.color(max_depth - 1, world).inner * attenuation.inner;
-            return vec3(col);
+            return vector.color(col);
         }
 
-        const white = vec3(.{ 1, 1, 1 });
-        const blue = vec3(.{ 0.5, 0.7, 1 });
+        const white = vector.color(.{ 1, 1, 1 });
+        const blue = vector.color(.{ 0.5, 0.7, 1 });
         const t = (self.dir.unit_vector().y() + 1) * 0.5;
-        return white.mul(1 - t).add(&blue.mul(t));
+        return white.mul(1 - t).add(blue.mul(t));
     }
 
     fn hit_sphere(ray: *const Ray, sphere: *const Sphere, bounds: Bounds) ?HitRecord {
-        const oc = sphere.center.sub(&ray.orig);
+        const oc = sphere.center.sub(ray.orig);
         const a = ray.dir.length_squared();
-        const h = ray.dir.dot(&oc);
+        const h = ray.dir.dot(oc);
         const c = oc.length_squared() - (sphere.radius * sphere.radius);
 
         const discriminant = h * h - a * c;
@@ -190,7 +187,7 @@ pub const Ray = struct {
         }
 
         const hit_point = ray.at(root);
-        var normal = hit_point.sub(&sphere.center).div(sphere.radius).as(.unit);
+        var normal = hit_point.sub(sphere.center).div(sphere.radius).as(.unit);
         const front_face = ray.dir.dot(&normal) < 0;
 
         if (!front_face) {
@@ -328,17 +325,17 @@ const Camera = struct {
     const pixel_delta_v = viewport_v.div(image_height);
 
     const viewport_upper_left = cam_center
-        .sub(&vec3(.{ 0, 0, focal_length }))
-        .sub(&viewport_u.div(2))
-        .sub(&viewport_v.div(2));
+        .sub(vec3(.{ 0, 0, focal_length }))
+        .sub(viewport_u.div(2))
+        .sub(viewport_v.div(2));
 
     const pixel00_loc =
-        viewport_upper_left.add(&pixel_delta_u.add(&pixel_delta_v).mul(0.5));
+        viewport_upper_left.add(pixel_delta_u.add(pixel_delta_v).mul(0.5));
 
     const samples_per_pixel = 200;
     const max_depth = 50;
 
-    fn render(world: *const Objects, progress_writer: *std.Io.Writer, rng: std.Random, thread_pool: *std.Thread.Pool, image_buf: []Color) !void {
+    fn render(world: *const Objects, progress_writer: *std.Io.Writer, thread_pool: *std.Thread.Pool, image_buf: []Color) !void {
         comptime std.debug.assert(image_height > 1);
         if (image_buf.len < image_width * image_height) {
             return error.ImageBufferTooSmall;
@@ -352,7 +349,7 @@ const Camera = struct {
         // NOTE: this uses the same seed for every pixel
         var noise: [samples_per_pixel * 2]f64 = undefined; // TODO: vectorize / compute at comptime?
         for (0..noise.len) |i| {
-            noise[i] = rng.float(f64);
+            noise[i] = std.crypto.random.float(f64);
         }
 
         for (0..image_height) |y| {
@@ -360,8 +357,8 @@ const Camera = struct {
                 const PoolTask = struct {
                     fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Color, task_noise: *[samples_per_pixel * 2]f64, task_world: *const Objects) void {
                         // I guess rng is now raced?
-                        const pixel_center = pixel00_loc.add(&pixel_delta_u.mul(@floatFromInt(pixel_x))).add(&pixel_delta_v.mul(@floatFromInt(pixel_y)));
-                        const ray_direction = pixel_center.sub(&cam_center);
+                        const pixel_center = pixel00_loc.add(pixel_delta_u.mul(@floatFromInt(pixel_x))).add(pixel_delta_v.mul(@floatFromInt(pixel_y)));
+                        const ray_direction = pixel_center.sub(cam_center);
                         var ray = Ray{
                             .orig = cam_center,
                             .dir = undefined,
@@ -371,12 +368,12 @@ const Camera = struct {
 
                         for (0..samples_per_pixel) |i| {
                             // sample in square distribution
-                            const offset = pixel_delta_u.mul(task_noise[i] - 0.5).add(&pixel_delta_v.mul(task_noise[2 * i] - 0.5));
-                            ray.dir = ray_direction.add(&offset);
+                            const offset = pixel_delta_u.mul(task_noise[i] - 0.5).add(pixel_delta_v.mul(task_noise[2 * i] - 0.5));
+                            ray.dir = ray_direction.add(offset);
                             pixel_color.mut_add(&ray.color(max_depth, task_world));
                         }
                         pixel_color.mut_div(samples_per_pixel);
-                        pixel.* = pixel_color;
+                        pixel.* = pixel_color.as(.color);
                     }
                 };
                 thread_pool.spawnWg(&wg, PoolTask.doIt, .{ x, y, &image_buf[y * image_width + x], &noise, world });

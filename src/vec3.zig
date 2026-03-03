@@ -4,6 +4,7 @@ const std = @import("std");
 const VecType = enum {
     arb,
     unit,
+    color,
 };
 
 pub fn Vec3(vec_type: VecType) type {
@@ -12,12 +13,13 @@ pub fn Vec3(vec_type: VecType) type {
 
         const Self = @This();
 
-        // for conversions between vec types, caller must validate the invariants hold
+        /// for conversions between vec types, caller must validate the invariants hold
         pub fn as(self: *const Self, comptime v_type: VecType) Vec3(v_type) {
             return .{ .inner = self.inner };
         }
 
         pub fn linear_to_gamma(self: *Self) void {
+            if (vec_type != .color) @compileError("color function");
             self.inner = @sqrt(self.inner);
         }
 
@@ -40,8 +42,15 @@ pub fn Vec3(vec_type: VecType) type {
             };
         }
 
-        pub fn reflect(self: *const Self, normal: *const Vec3(.unit)) Vec3(.arb) {
-            return self.sub(&normal.mul(2 * self.dot(normal)));
+        pub fn reflect(self: *const Self, normal: Vec3(.unit)) Self {
+            switch (vec_type) {
+                .color => @compileError("why the fuck are you reflecting color?"),
+                .arb, .unit => {},
+            }
+            const norm = normal.as(vec_type);
+            const proj = norm.mul(2 * self.dot(norm)).as(.arb);
+            // final cast should be fine, as reflecting a unit vec gives a unit vec
+            return self.as(.arb).sub(proj).as(vec_type);
         }
 
         fn reflectance(cosine: f64, refraction_coeff: f64) f64 {
@@ -54,42 +63,49 @@ pub fn Vec3(vec_type: VecType) type {
         }
 
         pub fn refract(self: *const Self, normal: *const Vec3(.unit), refraction_coeff: f64) ?Vec3(.arb) {
-            const cos_theta = @min(self.mul(-1).dot(normal), 1.0);
-            const sin_theta = @sqrt(1 - cos_theta * cos_theta);
+            const norm = normal.as(.arb);
+            const cos_theta: f64 = @min(self.mul(-1).dot(norm), 1.0);
+            const sin_theta: f64 = @sqrt(1 - cos_theta * cos_theta);
 
             if (refraction_coeff * sin_theta > 1 or reflectance(cos_theta, refraction_coeff) > std.crypto.random.float(f64)) {
                 return null;
             }
 
-            const out_perp = self.add(&normal.mul(cos_theta)).mul(refraction_coeff);
-            const out_parallel = normal.mul(-@sqrt(@abs(1 - out_perp.length_squared())));
-            return out_perp.add(&out_parallel);
+            const out_perp = self.as(.arb).add(norm.mul(cos_theta)).mul(refraction_coeff);
+            const out_parallel = norm.mul(-@sqrt(@abs(1 - out_perp.length_squared())));
+            return out_perp.add(out_parallel);
         }
 
         pub fn eq(self: *const Self, other: anytype) bool {
             return @reduce(.And, self.inner == other.inner);
         }
 
-        pub fn add(self: *const Self, other: anytype) Vec3(.arb) {
+        const bin_result: VecType = switch (vec_type) {
+            .unit => .arb,
+            // stays same
+            else => vec_type,
+        };
+
+        pub fn add(self: *const Self, other: Self) Vec3(bin_result) {
             return .{
                 .inner = self.inner + other.inner,
             };
         }
 
-        pub fn sub(self: *const Self, other: anytype) Vec3(.arb) {
+        pub fn sub(self: *const Self, other: Self) Vec3(bin_result) {
             return .{
                 .inner = self.inner - other.inner,
             };
         }
 
-        pub fn mul(self: *const Self, scalar: f64) Vec3(.arb) {
+        pub fn mul(self: *const Self, scalar: f64) Vec3(bin_result) {
             const splatted: @TypeOf(self.inner) = @splat(scalar);
             return .{
                 .inner = self.inner * splatted,
             };
         }
 
-        pub fn div(self: *const Self, scalar: f64) Vec3(.arb) {
+        pub fn div(self: *const Self, scalar: f64) Vec3(bin_result) {
             const splatted: @TypeOf(self.inner) = @splat(scalar);
             return .{
                 .inner = self.inner / splatted,
@@ -186,7 +202,7 @@ pub fn random() Vec3(.arb) {
 /// all values are in [0, 1)
 pub fn random_unit() Vec3(.unit) {
     while (true) {
-        var out: Vec3(.arb) = random().sub(&new(@splat(0.5))).mul(2);
+        var out: Vec3(.arb) = random().sub(vec3(@splat(0.5))).mul(2);
         const len_squared = out.length_squared();
         if (1e-160 < len_squared and len_squared <= 1) {
             out.mut_div(@sqrt(len_squared));
@@ -203,13 +219,26 @@ pub fn unit_on_hemisphere(normal: *const Vec3(.unit)) Vec3(.unit) {
     return out;
 }
 
-pub fn new(inner: @Vector(3, f64)) Vec3(.arb) {
+pub fn vec3(inner: @Vector(3, f64)) Vec3(.arb) {
+    return .{
+        .inner = inner,
+    };
+}
+
+pub fn color(inner: @Vector(3, f64)) Vec3(.color) {
     return .{
         .inner = inner,
     };
 }
 
 test "alias" {
-    const u: Vec3(.unit) = new(@splat(0)).as(.unit);
+    const u: Vec3(.unit) = vec3(@splat(0)).as(.unit);
     std.debug.print("{}", u);
+}
+
+test {
+    const subtypes = [_]VecType{ .unit, .color, .arb };
+    inline for (subtypes) |subtype| {
+        _ = Vec3(subtype);
+    }
 }

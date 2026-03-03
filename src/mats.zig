@@ -1,5 +1,5 @@
 const vector = @import("vec3.zig");
-const vec3 = vector.new;
+const vec3 = vector.vec3;
 const Color = vector.Vec3(.arb);
 
 const main = @import("main.zig");
@@ -9,7 +9,7 @@ const HitRecord = main.HitRecord;
 const Lambertian = struct {
     albedo: Color,
     pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        var scatter_direction = hit_record.normal.add(&vector.random_unit());
+        var scatter_direction = hit_record.normal.add(vector.random_unit());
         if (scatter_direction.near_zero()) {
             scatter_direction = hit_record.normal.as(.arb);
         }
@@ -26,7 +26,7 @@ const Metal = struct {
     fuzziness: f64,
     pub fn scatter(self: *const Metal, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
         const fuzz = vector.random_unit().mul(self.fuzziness);
-        const reflected = ray_in.dir.reflect(&hit_record.normal).unit_vector().add(&fuzz);
+        const reflected = ray_in.dir.reflect(hit_record.normal).unit_vector().as(.arb).add(fuzz);
 
         if (reflected.dot(&hit_record.normal) < 0) {
             return null;
@@ -65,7 +65,7 @@ const Dielectric = struct {
         } else {
             const reflected = Ray{
                 .orig = hit_record.point,
-                .dir = unit_dir.reflect(&hit_record.normal).as(.arb),
+                .dir = unit_dir.reflect(hit_record.normal).as(.arb),
             };
             return .{
                 .scattered = reflected,
