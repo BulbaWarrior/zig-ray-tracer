@@ -6,54 +6,127 @@ const Pixel = Vec3(.color);
 
 const tracing = @import("tracing.zig");
 const Objects = tracing.Objects;
+const Ray = tracing.Ray;
 
 const CameraOptions = struct {
     aspect_ratio: f64 = 16.0 / 9.0,
     image_width: usize = 1920,
-    cam_center: Vec3(.arb) = vec3.vec3(.{ 0, 0, 0 }),
     samples_per_pixel: usize = 200,
     max_depth: usize = 50,
+    /// in degrees
+    vfov: f64 = 90,
+    orientation: OrientationOptions = .{},
 };
 
-const Ray = tracing.Ray;
-
-const viewport_height = 2;
-const focal_length = 1;
+const OrientationOptions = struct {
+    look_from: Vec3(.arb) = vec3.vec3(.{ 0, 0, 0 }),
+    look_at: Vec3(.arb) = vec3.vec3(.{ 0, 0, -1 }),
+    up: Vec3(.arb) = vec3.vec3(.{ 0, 1, 0 }),
+};
 
 aspect_ratio: f64,
 image_width: usize,
 image_height: usize,
-viewport_width: f64,
-cam_center: Vec3(.arb),
+
+center: Vec3(.arb),
+focal_length: f64,
+
 samples_per_pixel: usize,
 max_depth: usize,
-viewport_u: Vec3(.arb),
-viewport_v: Vec3(.arb),
-pixel_delta_u: Vec3(.arb),
-pixel_delta_v: Vec3(.arb),
+
+// viewport_width: f64,
+// viewport_height: f64,
+// viewport_u: Vec3(.arb),
+// viewport_v: Vec3(.arb),
+viewport: Viewport,
+// pixel_delta_u: Vec3(.arb),
+// pixel_delta_v: Vec3(.arb),
+pixel: PixelMeta,
+frame_basis: FrameBasis,
 world: *const Objects,
 
+const FrameBasis = struct {
+    /// camera right
+    u: Vec3(.unit),
+    /// camera up
+    v: Vec3(.unit),
+    /// behind camera
+    w: Vec3(.unit),
+};
+
+const PixelMeta = struct {
+    delta_u: Vec3(.arb),
+    delta_v: Vec3(.arb),
+    loc00: Vec3(.arb),
+};
+
+const Viewport = struct {
+    width: f64,
+    height: f64,
+    u: Vec3(.arb),
+    v: Vec3(.arb),
+    top_left: Vec3(.arb),
+};
+
 pub fn init(options: CameraOptions, world: *const Objects) Camera {
+    const orientation = options.orientation;
+
+    const focal_length = orientation.look_from.sub(orientation.look_at).length();
+
+    const frame_basis = basis: {
+        const w = orientation.look_from.sub(orientation.look_at).unit_vector();
+        const u = orientation.up.cross(w).unit_vector();
+        const v = w.cross(u).unit_vector();
+
+        break :basis FrameBasis{ .w = w, .u = u, .v = v };
+    };
+
     const image_width_f: f64 = @floatFromInt(options.image_width);
     const image_height_f: f64 = image_width_f / options.aspect_ratio;
     const image_height: usize = @intFromFloat(image_height_f);
-    const viewport_width = viewport_height * (image_width_f / image_height_f);
-    const viewport_u = vec3.vec3(.{ viewport_width, 0, 0 });
-    const viewport_v = vec3.vec3(.{ 0, -viewport_height, 0 });
-    const pixel_delta_u = viewport_u.div(image_width_f);
-    const pixel_delta_v = viewport_v.div(@floatFromInt(image_height));
+
+    const viewport = blk: {
+        const theta = std.math.degreesToRadians(options.vfov);
+        const h = std.math.tan(theta / 2);
+        const height = 2 * h * focal_length;
+        const width = height * (image_width_f / image_height_f);
+        const u = frame_basis.u.mul(width);
+        const v = frame_basis.v.mul(-height);
+        const top_left = orientation.look_from
+            .sub(frame_basis.w.mul(focal_length))
+            .sub(u.div(2))
+            .sub(v.div(2));
+
+        break :blk Viewport{
+            .width = width,
+            .height = height,
+            .u = u,
+            .v = v,
+            .top_left = top_left,
+        };
+    };
+
+    const pixel_meta = blk: {
+        var meta = PixelMeta{
+            .delta_u = viewport.u.div(image_width_f),
+            .delta_v = viewport.v.div(@floatFromInt(image_height)),
+            .loc00 = undefined,
+        };
+        meta.loc00 = viewport.top_left.add(meta.delta_u.add(meta.delta_v).div(2));
+        break :blk meta;
+    };
+
     return .{
         .aspect_ratio = options.aspect_ratio,
         .image_width = options.image_width,
         .image_height = image_height,
-        .viewport_width = viewport_width,
-        .cam_center = options.cam_center,
+        .center = options.orientation.look_from,
+        .focal_length = focal_length,
         .samples_per_pixel = options.samples_per_pixel,
         .max_depth = options.max_depth,
-        .viewport_v = viewport_v,
-        .viewport_u = viewport_u,
-        .pixel_delta_v = pixel_delta_v,
-        .pixel_delta_u = pixel_delta_u,
+        .pixel = pixel_meta,
+        .viewport = viewport,
+        .frame_basis = frame_basis,
         .world = world,
     };
 }
@@ -105,17 +178,11 @@ pub fn render(
 }
 
 fn ray_direction_to(self: *const Camera, x: usize, y: usize) Vec3(.arb) {
-    const viewport_upper_left = self.cam_center
-        .sub(vec3.vec3(.{ 0, 0, focal_length }))
-        .sub(self.viewport_u.div(2))
-        .sub(self.viewport_v.div(2));
+    const pixel_center = self.pixel.loc00
+        .add(self.pixel.delta_u.mul(@floatFromInt(x)))
+        .add(self.pixel.delta_v.mul(@floatFromInt(y)));
 
-    const pixel00_loc = viewport_upper_left.add(self.pixel_delta_u.add(self.pixel_delta_v).mul(0.5));
-
-    const pixel_center = pixel00_loc
-        .add(self.pixel_delta_u.mul(@floatFromInt(x)))
-        .add(self.pixel_delta_v.mul(@floatFromInt(y)));
-    return pixel_center.sub(self.cam_center);
+    return pixel_center.sub(self.center);
 }
 
 const PoolTask = struct {
@@ -132,14 +199,14 @@ const PoolTask = struct {
 
         const straight_ray_dir = self.cam.ray_direction_to(self.x, self.y);
         var ray = Ray{
-            .orig = self.cam.cam_center,
+            .orig = self.cam.center,
             .dir = undefined,
         };
 
         for (0..self.cam.samples_per_pixel) |i| {
             // sample in square distribution
-            const offset = self.cam.pixel_delta_u.mul(self.noise[i * 2] - 0.5)
-                .add(self.cam.pixel_delta_v.mul(self.noise[i * 2 + 1] - 0.5));
+            const offset = self.cam.pixel.delta_u.mul(self.noise[i * 2] - 0.5)
+                .add(self.cam.pixel.delta_v.mul(self.noise[i * 2 + 1] - 0.5));
             ray.dir = straight_ray_dir
                 .add(offset);
 

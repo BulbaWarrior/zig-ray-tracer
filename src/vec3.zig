@@ -174,7 +174,7 @@ pub fn Vec3(vec_type: VecType) type {
             return self.div(self.length()).as(.unit);
         }
 
-        pub fn cross(self: *const Self, other: *const type) Vec3(.arb) {
+        pub fn cross(self: *const Self, other: anytype) Vec3(.arb) {
             const u = &self.inner;
             const v = &other.inner;
             const res = .{

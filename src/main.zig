@@ -72,7 +72,16 @@ pub fn main() !void {
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
-    const cam = Camera.init(.{ .image_width = 720, .samples_per_pixel = 3 }, &world);
+    const cam = Camera.init(.{
+        .image_width = 720,
+        .samples_per_pixel = 20,
+        .vfov = 25,
+        .orientation = .{
+            .look_from = vec3(.{ -2, 2, 1 }),
+            .look_at = vec3(.{ 0, 0, -1 }),
+            .up = vec3(.{ 0, 1, 0 }),
+        },
+    }, &world);
     const pixels = try cam.alloc_frame(ally);
     defer ally.free(pixels);
 
@@ -94,8 +103,7 @@ pub fn main() !void {
         const g: u8 = @intFromFloat(pixel.y());
         const b: u8 = @intFromFloat(pixel.z());
         const data: [3]u8 = .{ r, g, b };
-        const written = try stdout.write(&data);
-        std.debug.assert(written == 3);
+        try stdout.writeAll(&data);
     }
     try stdout.flush();
     writing.end();
