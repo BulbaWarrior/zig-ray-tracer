@@ -73,6 +73,10 @@ pub fn init(options: CameraOptions, world: *const Objects) Camera {
 
     const focal_length = orientation.look_from.sub(orientation.look_at).length();
 
+    const image_width_f: f64 = @floatFromInt(options.image_width);
+    const image_height_f: f64 = image_width_f / options.aspect_ratio;
+    const image_height: usize = @intFromFloat(image_height_f);
+
     const frame_basis = basis: {
         const w = orientation.look_from.sub(orientation.look_at).unit_vector();
         const u = orientation.up.cross(w).unit_vector();
@@ -80,10 +84,6 @@ pub fn init(options: CameraOptions, world: *const Objects) Camera {
 
         break :basis FrameBasis{ .w = w, .u = u, .v = v };
     };
-
-    const image_width_f: f64 = @floatFromInt(options.image_width);
-    const image_height_f: f64 = image_width_f / options.aspect_ratio;
-    const image_height: usize = @intFromFloat(image_height_f);
 
     const viewport = blk: {
         const theta = std.math.degreesToRadians(options.vfov);

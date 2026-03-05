@@ -142,6 +142,17 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
+    const view_step = b.step("view", "render image and open in viewer");
+    const stdout = run_cmd.captureStdOut();
+    const install_output = b.addInstallFile(stdout, "image.ppm");
+    const open = b.addSystemCommand(&.{"xdg-open"});
+    open.step.dependOn(&install_output.step);
+    open.addFileArg(stdout);
+    open.step.dependOn(&run_cmd.step);
+
+    view_step.dependOn(&open.step);
+    // open.step.dependOn(&run_cmd.step);
+
     // Just like flags, top level steps are also listed in the `--help` menu.
     //
     // The Zig build system is entirely implemented in userland, which means
