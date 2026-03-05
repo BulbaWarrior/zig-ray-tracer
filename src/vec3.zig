@@ -1,7 +1,7 @@
 const std = @import("std");
 // const Vec3 = @This();
 
-const VecType = enum {
+pub const VecType = enum {
     arb,
     unit,
     color,

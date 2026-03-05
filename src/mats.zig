@@ -3,8 +3,9 @@ const vec3 = vector.vec3;
 const Color = vector.Vec3(.arb);
 
 const main = @import("main.zig");
-const Ray = main.Ray;
-const HitRecord = main.HitRecord;
+const tracing = @import("tracing.zig");
+const Ray = tracing.Ray;
+const HitRecord = tracing.HitRecord;
 
 const Lambertian = struct {
     albedo: Color,
@@ -46,12 +47,13 @@ const Dielectric = struct {
     refraction_index: f64,
 
     pub fn scatter(self: *const Dielectric, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        var ri: f64 = undefined;
-        if (hit_record.front_face) {
-            ri = 1 / self.refraction_index;
-        } else {
-            ri = self.refraction_index;
-        }
+        const ri: f64 = blk: {
+            if (hit_record.front_face) {
+                break :blk 1 / self.refraction_index;
+            } else {
+                break :blk self.refraction_index;
+            }
+        };
 
         const unit_dir = ray_in.dir.unit_vector();
         const refracted_dir = unit_dir.refract(&hit_record.normal, ri);
