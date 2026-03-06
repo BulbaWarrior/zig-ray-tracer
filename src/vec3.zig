@@ -219,6 +219,16 @@ pub fn unit_on_hemisphere(normal: *const Vec3(.unit)) Vec3(.unit) {
     return out;
 }
 
+pub fn random_in_unit_disk() Vec3(.arb) {
+    var out: Vec3(.arb) = undefined;
+    while (true) {
+        out.inner = .{ std.crypto.random.float(f64), std.crypto.random.float(f64), 0 };
+        if (out.length_squared() < 1) {
+            return out;
+        }
+    }
+}
+
 pub fn vec3(inner: @Vector(3, f64)) Vec3(.arb) {
     return .{
         .inner = inner,

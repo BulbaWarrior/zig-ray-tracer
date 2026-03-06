@@ -15,7 +15,15 @@ const CameraOptions = struct {
     max_depth: usize = 50,
     /// in degrees
     vfov: f64 = 90,
+    /// variation angle of rays through each pixel, in degrees
     orientation: OrientationOptions = .{},
+    focus: FocusOptions = .{},
+};
+
+const FocusOptions = struct {
+    /// variation angle of rays through each pixel, in degrees
+    defocus_angle: f64 = 0,
+    focus_dist: f64 = 10,
 };
 
 const OrientationOptions = struct {
@@ -29,7 +37,8 @@ image_width: usize,
 image_height: usize,
 
 center: Vec3(.arb),
-focal_length: f64,
+focus_dist: f64,
+defocus_angle: f64,
 
 samples_per_pixel: usize,
 max_depth: usize,
@@ -37,7 +46,15 @@ max_depth: usize,
 viewport: Viewport,
 pixel: PixelMeta,
 frame_basis: FrameBasis,
+defocus_disk: DefocusDisk,
 world: *const Objects,
+
+const DefocusDisk = struct {
+    /// horizontal radius
+    u: Vec3(.arb),
+    /// vertical radius
+    v: Vec3(.arb),
+};
 
 const FrameBasis = struct {
     /// camera right
@@ -65,8 +82,6 @@ const Viewport = struct {
 pub fn init(options: CameraOptions, world: *const Objects) Camera {
     const orientation = options.orientation;
 
-    const focal_length = orientation.look_from.sub(orientation.look_at).length();
-
     const image_width_f: f64 = @floatFromInt(options.image_width);
     const image_height_f: f64 = image_width_f / options.aspect_ratio;
     const image_height: usize = @intFromFloat(image_height_f);
@@ -79,15 +94,17 @@ pub fn init(options: CameraOptions, world: *const Objects) Camera {
         break :basis FrameBasis{ .w = w, .u = u, .v = v };
     };
 
+    const focus_dist = options.focus.focus_dist;
+
     const viewport = blk: {
         const theta = std.math.degreesToRadians(options.vfov);
         const h = std.math.tan(theta / 2);
-        const height = 2 * h * focal_length;
+        const height = 2 * h * focus_dist;
         const width = height * (image_width_f / image_height_f);
         const u = frame_basis.u.mul(width);
         const v = frame_basis.v.mul(-height);
         const top_left = orientation.look_from
-            .sub(frame_basis.w.mul(focal_length))
+            .sub(frame_basis.w.mul(focus_dist))
             .sub(u.div(2))
             .sub(v.div(2));
 
@@ -97,6 +114,14 @@ pub fn init(options: CameraOptions, world: *const Objects) Camera {
             .u = u,
             .v = v,
             .top_left = top_left,
+        };
+    };
+
+    const defocus_disk = blk: {
+        const radius = focus_dist * std.math.tan(std.math.degreesToRadians(options.focus.defocus_angle / 2));
+        break :blk DefocusDisk{
+            .u = viewport.u.mul(radius),
+            .v = viewport.v.mul(radius),
         };
     };
 
@@ -115,7 +140,9 @@ pub fn init(options: CameraOptions, world: *const Objects) Camera {
         .image_width = options.image_width,
         .image_height = image_height,
         .center = options.orientation.look_from,
-        .focal_length = focal_length,
+        .focus_dist = focus_dist,
+        .defocus_angle = options.focus.defocus_angle,
+        .defocus_disk = defocus_disk,
         .samples_per_pixel = options.samples_per_pixel,
         .max_depth = options.max_depth,
         .pixel = pixel_meta,
@@ -151,7 +178,7 @@ pub fn render(
     }
     gen_noise.end();
 
-    const calculate = progress.start("calculate", 0);
+    const calculate = progress.start("calculate", self.image_height);
 
     var wg = std.Thread.WaitGroup{};
 
@@ -166,19 +193,25 @@ pub fn render(
             };
             thread_pool.spawnWg(&wg, PoolTask.run, .{task});
         }
+        thread_pool.waitAndWork(&wg);
+        wg.reset();
+        calculate.completeOne();
     }
-    thread_pool.waitAndWork(&wg);
     calculate.end();
 }
 
-fn ray_direction_to(self: *const Camera, x: usize, y: usize) Vec3(.arb) {
-    const pixel_center = self.pixel.loc00
+fn pixel_at(self: *const Camera, x: usize, y: usize) Vec3(.arb) {
+    return self.pixel.loc00
         .add(self.pixel.delta_u.mul(@floatFromInt(x)))
         .add(self.pixel.delta_v.mul(@floatFromInt(y)));
-
-    return pixel_center.sub(self.center);
 }
 
+fn defocus_disk_sample(self: *const Camera) Vec3(.arb) {
+    const rand = vec3.random_in_unit_disk();
+    const disk_point = self.defocus_disk.u.mul(rand.inner[0])
+        .add(self.defocus_disk.v.mul(rand.inner[1]));
+    return self.center.add(disk_point);
+}
 const PoolTask = struct {
     x: usize,
     y: usize,
@@ -191,18 +224,21 @@ const PoolTask = struct {
 
         var pixel = vec3.color(@splat(0));
 
-        const straight_ray_dir = self.cam.ray_direction_to(self.x, self.y);
-        var ray = Ray{
-            .orig = self.cam.center,
-            .dir = undefined,
-        };
-
+        const pixel_center = self.cam.pixel_at(self.x, self.y);
         for (0..self.cam.samples_per_pixel) |i| {
             // sample in square distribution
             const offset = self.cam.pixel.delta_u.mul(self.noise[i * 2] - 0.5)
                 .add(self.cam.pixel.delta_v.mul(self.noise[i * 2 + 1] - 0.5));
-            ray.dir = straight_ray_dir
-                .add(offset);
+
+            const origin = switch (self.cam.defocus_angle == 0) {
+                true => self.cam.center,
+                false => self.cam.defocus_disk_sample(),
+            };
+
+            const ray = Ray{
+                .dir = pixel_center.add(offset).sub(origin),
+                .orig = origin,
+            };
 
             pixel.mut_add(ray.color(self.cam.max_depth, self.cam.world));
         }
