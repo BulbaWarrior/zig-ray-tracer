@@ -143,12 +143,13 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_exe_tests.step);
 
     const view_step = b.step("view", "render image and open in viewer");
-    const stdout = run_cmd.captureStdOut();
+
+    const view_cmd = b.allocator.dupe(std.Build.Step.Run, &.{run_cmd.*}) catch @panic("OOM");
+    const stdout = view_cmd[0].captureStdOut();
     const install_output = b.addInstallFile(stdout, "image.ppm");
     const open = b.addSystemCommand(&.{"xdg-open"});
     open.step.dependOn(&install_output.step);
     open.addFileArg(stdout);
-    open.step.dependOn(&run_cmd.step);
 
     view_step.dependOn(&open.step);
     // open.step.dependOn(&run_cmd.step);
