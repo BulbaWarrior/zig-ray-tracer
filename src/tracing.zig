@@ -12,19 +12,19 @@ pub const Bounds = struct {
     min: f64,
     max: f64,
 
-    fn contain(bounds: *const Bounds, t: f64) bool {
+    pub fn contain(bounds: *const Bounds, t: f64) bool {
         return bounds.min <= t and t <= bounds.max;
     }
 
-    fn surround(bounds: *const Bounds, t: f64) bool {
+    pub fn surround(bounds: *const Bounds, t: f64) bool {
         return bounds.min < t and t < bounds.max;
     }
 
-    fn size(self: *const Bounds) f64 {
+    pub fn size(self: *const Bounds) f64 {
         return self.max - self.min;
     }
 
-    fn clamp(self: *const Bounds, x: f64) f64 {
+    pub fn clamp(self: *const Bounds, x: f64) f64 {
         if (x < self.min) return self.min;
         if (x > self.max) return self.max;
         return x;
@@ -36,7 +36,6 @@ pub const Bounds = struct {
 
 pub const HitRecord = struct {
     point: Vec3(.arb),
-    /// always unit
     normal: Vec3(.unit),
     t: f64,
     front_face: bool,
@@ -115,18 +114,19 @@ const Sphere = struct {
     }
 };
 
-const Geometry = union(enum) {
+const Triangle = @import("tracing/Triangle.zig");
+
+pub const Geometry = union(enum) {
     sphere: Sphere,
+    triangle: Triangle,
 
     pub fn hit(self: *const Geometry, ray: *const Ray, bounds: Bounds) ?HitRecord {
-        const maybe_record: ?HitRecord = switch (self) {
-            Geometry.sphere => |obj| {
-                obj.hit(ray, bounds);
-            },
+        const maybe_record: ?HitRecord = switch (self.*) {
+            Geometry.sphere => |sphere| sphere.hit(ray, bounds),
+            Geometry.triangle => |tri| tri.hit(ray, bounds),
         };
 
         if (maybe_record) |record| {
-            std.debug.assert(record.normal.length() <= 1);
             std.debug.assert(ray.dir.dot(&record.normal) < 0);
         }
 
@@ -136,7 +136,7 @@ const Geometry = union(enum) {
 
 pub const Object = struct {
     geometry: Geometry,
-    material: Material,
+    material: *const Material,
 };
 
 pub const Objects = struct {
@@ -162,9 +162,7 @@ pub const Objects = struct {
 
         for (slice.items(.geometry), 0..) |geom, i| {
             const cur_bounds = Bounds{ .min = bounds.min, .max = if (closest_hit) |h| h.t else bounds.max };
-            const record = switch (geom) {
-                Geometry.sphere => |sphere| sphere.hit(ray, cur_bounds),
-            };
+            const record = geom.hit(ray, cur_bounds);
 
             if (record) |rec| {
                 closest_hit = rec;
@@ -173,7 +171,7 @@ pub const Objects = struct {
         }
 
         if (closest_hit) |rec| {
-            const material = &slice.items(.material)[closest_index];
+            const material = slice.items(.material)[closest_index];
             return .{
                 .hit = rec,
                 .material = material,
@@ -192,10 +190,10 @@ test "basic usage" {
     defer objects.deinit(ally);
 
     const ray = Ray{
-        .orig = vec3(@splat(0)),
-        .dir = vec3(.{ 0, 0, -1 }),
+        .orig = vec3.vec3(@splat(0)),
+        .dir = vec3.vec3(.{ 0, 0, -1 }),
     };
-    try objects.append(ally, .{ .geometry = .{ .sphere = .{ .center = vec3(.{ 0, 0, -1 }), .radius = 0.5 } }, .material = .{ .lambertian = .{ .albedo = vec3(@splat(1.0)) } } });
+    try objects.append(ally, .{ .geometry = .{ .sphere = .{ .center = vec3.vec3(.{ 0, 0, -1 }), .radius = 0.5 } }, .material = .{ .lambertian = .{ .albedo = vec3.vec3(@splat(1.0)) } } });
     const rec = objects.hit(&ray, .{ .max = 1000, .min = -1000 });
 
     std.debug.assert(rec.?.hit.front_face == true);
@@ -203,12 +201,12 @@ test "basic usage" {
 
 test "call through object" {
     const obj = Geometry{ .sphere = Sphere{
-        .center = vec3(.{ 0, 0, -1 }),
+        .center = vec3.vec3(.{ 0, 0, -1 }),
         .radius = 0.5,
     } };
     const ray = Ray{
-        .orig = vec3(.{ 0, 0, 0 }),
-        .dir = vec3(.{ 0, 0, -1 }),
+        .orig = vec3.vec3(.{ 0, 0, 0 }),
+        .dir = vec3.vec3(.{ 0, 0, -1 }),
     };
 
     const rec = obj.hit(&ray, .{ .max = 1000, .min = -1000 });

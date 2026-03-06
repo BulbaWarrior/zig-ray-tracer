@@ -43,41 +43,48 @@ pub fn main() !void {
         .metal = .{ .albedo = vec3(.{ 0.8, 0.6, 0.2 }), .fuzziness = 0.05 },
     };
 
-    try world.append(ally, .{ .material = material_ground, .geometry = .{ .sphere = .{
+    try world.append(ally, .{ .material = &material_ground, .geometry = .{ .sphere = .{
         .center = vec3(.{ 0, -100.5, -1 }),
         .radius = 100,
     } } });
 
-    try world.append(ally, .{ .material = material_left, .geometry = .{ .sphere = .{
+    try world.append(ally, .{ .material = &material_left, .geometry = .{ .sphere = .{
         .center = vec3(.{ -1, 0, -1 }),
         .radius = 0.5,
     } } });
 
-    try world.append(ally, .{ .material = material_bubble, .geometry = .{ .sphere = .{
+    try world.append(ally, .{ .material = &material_bubble, .geometry = .{ .sphere = .{
         .center = vec3(.{ -1, 0, -1 }),
         .radius = 0.4,
     } } });
 
-    try world.append(ally, .{ .material = material_center, .geometry = .{ .sphere = .{
+    try world.append(ally, .{ .material = &material_center, .geometry = .{ .sphere = .{
         .center = vec3(.{ 0, 0, -1.2 }),
         .radius = 0.5,
     } } });
 
-    try world.append(ally, .{ .material = material_right, .geometry = .{ .sphere = .{
+    try world.append(ally, .{ .material = &material_right, .geometry = .{ .sphere = .{
         .center = vec3(.{ 1, 0, -1 }),
         .radius = 0.5,
     } } });
+
+    const tri_points = [_]Vec3(.arb){ vec3(.{ -0.5, 0, -0.5 }), vec3(.{ 0.5, 0, -0.5 }), vec3(.{ 0, 1, -0.5 }) };
+    try world.append(ally, .{
+        .geometry = .{ .triangle = .{ .points = .{ &tri_points[2], &tri_points[1], &tri_points[0] } } },
+        .material = &material_bubble,
+    });
 
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
     const cam = Camera.init(.{
-        .image_width = 720,
-        .samples_per_pixel = 20,
-        .vfov = 25,
+        .image_width = 1920,
+        .samples_per_pixel = 400,
+        .max_depth = 100,
+        .vfov = 30,
         .orientation = .{
-            .look_from = vec3(.{ -2, 2, 1 }),
+            .look_from = vec3(.{ -3, 2, 2 }),
             .look_at = vec3(.{ 0, 0, -1 }),
             .up = vec3(.{ 0, 1, 0 }),
         },
