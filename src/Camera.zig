@@ -178,7 +178,7 @@ pub fn render(
     }
     gen_noise.end();
 
-    const calculate = progress.start("calculate", 0);
+    const calculate = progress.start("calculate", self.image_height);
 
     var wg = std.Thread.WaitGroup{};
 
@@ -193,9 +193,10 @@ pub fn render(
             };
             thread_pool.spawnWg(&wg, PoolTask.run, .{task});
         }
+        thread_pool.waitAndWork(&wg);
+        wg.reset();
+        calculate.completeOne();
     }
-    thread_pool.waitAndWork(&wg);
-    wg.reset();
     calculate.end();
 }
 

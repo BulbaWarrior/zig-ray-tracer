@@ -12,7 +12,9 @@ const Color = vector.Vec3(.color);
 const Material = @import("mats.zig").Material;
 
 const Camera = @import("Camera.zig");
-const tracing = @import("tracing.zig");
+pub const tracing = @import("tracing.zig");
+
+const Model = tracing.Model;
 
 pub fn main() !void {
     var stdout_buffer: [1024]u8 = undefined;
@@ -68,23 +70,27 @@ pub fn main() !void {
         .radius = 0.5,
     } } });
 
-    const tri_points = [_]Vec3(.arb){ vec3(.{ -0.5, 0, -0.5 }), vec3(.{ 0.5, 0, -0.5 }), vec3(.{ 0, 1, -0.5 }) };
-    try world.append(ally, .{
-        .geometry = .{ .triangle = .{ .points = .{ &tri_points[2], &tri_points[1], &tri_points[0] } } },
-        .material = &material_bubble,
-    });
+    var teapot = try Model.load(ally);
+    defer teapot.deinit(ally);
+
+    for (teapot.triangles.items) |tri| {
+        try world.append(ally, .{
+            .geometry = .{ .triangle = tri },
+            .material = &material_left,
+        });
+    }
 
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
     const cam = Camera.init(.{
-        .image_width = 1920,
-        .samples_per_pixel = 400,
-        .max_depth = 100,
-        .vfov = 30,
+        .image_width = 720,
+        .samples_per_pixel = 100,
+        .max_depth = 10,
+        .vfov = 60,
         .orientation = .{
-            .look_from = vec3(.{ -3, 2, 2 }),
+            .look_from = vec3(.{ -3, 3, 4 }),
             .look_at = vec3(.{ 0, 0, -1 }),
             .up = vec3(.{ 0, 1, 0 }),
         },
@@ -115,87 +121,3 @@ pub fn main() !void {
     try stdout.flush();
     writing.end();
 }
-//
-// const OldCamera = struct {
-//     const aspect_ratio = 16.0 / 9.0;
-//     const image_width: usize = 1920;
-//     const image_width_f: f64 = @floatFromInt(image_width);
-//     const image_height: usize = @intFromFloat(image_width_f / aspect_ratio);
-//
-//     const viewport_height = 2.0;
-//     const viewport_width = viewport_height * (image_width_f / image_height);
-//     const focal_length = 1.0;
-//
-//     const cam_center = vec3(.{ 0, 0, 0 });
-//
-//     const viewport_u = vec3(.{ viewport_width, 0, 0 });
-//
-//     const viewport_v = vec3(.{ 0, -viewport_height, 0 });
-//     const pixel_delta_u = viewport_u.div(image_width);
-//
-//     const pixel_delta_v = viewport_v.div(image_height);
-//
-//     const viewport_upper_left = cam_center
-//         .sub(vec3(.{ 0, 0, focal_length }))
-//         .sub(viewport_u.div(2))
-//         .sub(viewport_v.div(2));
-//
-//     const pixel00_loc =
-//         viewport_upper_left.add(pixel_delta_u.add(pixel_delta_v).mul(0.5));
-//
-//     const samples_per_pixel = 200;
-//     const max_depth = 50;
-//
-//     fn render(world: *const Objects, progress_writer: *std.Io.Writer, thread_pool: *std.Thread.Pool, image_buf: []Color) !void {
-//         comptime std.debug.assert(image_height > 1);
-//         if (image_buf.len < image_width * image_height) {
-//             return error.ImageBufferTooSmall;
-//         }
-//
-//         // calculate
-//         try progress_writer.print("caclulating...\n", .{});
-//         try progress_writer.flush();
-//
-//         var wg = std.Thread.WaitGroup{};
-//         // NOTE: this uses the same seed for every pixel
-//         var noise: [samples_per_pixel * 2]f64 = undefined; // TODO: vectorize / compute at comptime?
-//         for (0..noise.len) |i| {
-//             noise[i] = std.crypto.random.float(f64);
-//         }
-//
-//         for (0..image_height) |y| {
-//             for (0..image_width) |x| {
-//                 const PoolTask = struct {
-//                     fn doIt(pixel_x: usize, pixel_y: usize, pixel: *Color, task_noise: *[samples_per_pixel * 2]f64, task_world: *const Objects) void {
-//                         // I guess rng is now raced?
-//                         const pixel_center = pixel00_loc.add(pixel_delta_u.mul(@floatFromInt(pixel_x))).add(pixel_delta_v.mul(@floatFromInt(pixel_y)));
-//                         const ray_direction = pixel_center.sub(cam_center);
-//                         var ray = Ray{
-//                             .orig = cam_center,
-//                             .dir = undefined,
-//                         };
-//
-//                         var pixel_color = vec3(@splat(0));
-//
-//                         for (0..samples_per_pixel) |i| {
-//                             // sample in square distribution
-//                             const offset = pixel_delta_u.mul(task_noise[i] - 0.5).add(pixel_delta_v.mul(task_noise[2 * i] - 0.5));
-//                             ray.dir = ray_direction.add(offset);
-//                             pixel_color.mut_add(&ray.color(max_depth, task_world));
-//                         }
-//                         pixel_color.mut_div(samples_per_pixel);
-//                         pixel.* = pixel_color.as(.color);
-//                     }
-//                 };
-//                 thread_pool.spawnWg(&wg, PoolTask.doIt, .{ x, y, &image_buf[y * image_width + x], &noise, world });
-//             }
-//         }
-//
-//         try progress_writer.print("threads spawned\n", .{});
-//         try progress_writer.flush();
-//         thread_pool.waitAndWork(&wg);
-//
-//         try progress_writer.print("calculation finished, writing\n", .{});
-//         try progress_writer.flush();
-//     }
-// };

@@ -8,6 +8,8 @@ const mats = @import("mats.zig");
 const Material = mats.Material;
 const Allocator = std.mem.Allocator;
 
+pub const Model = @import("tracing/Model.zig");
+
 pub const Bounds = struct {
     min: f64,
     max: f64,
@@ -114,7 +116,7 @@ const Sphere = struct {
     }
 };
 
-const Triangle = @import("tracing/Triangle.zig");
+pub const Triangle = @import("tracing/Triangle.zig");
 
 pub const Geometry = union(enum) {
     sphere: Sphere,
@@ -193,7 +195,7 @@ test "basic usage" {
         .orig = vec3.vec3(@splat(0)),
         .dir = vec3.vec3(.{ 0, 0, -1 }),
     };
-    try objects.append(ally, .{ .geometry = .{ .sphere = .{ .center = vec3.vec3(.{ 0, 0, -1 }), .radius = 0.5 } }, .material = .{ .lambertian = .{ .albedo = vec3.vec3(@splat(1.0)) } } });
+    try objects.append(ally, .{ .geometry = .{ .sphere = .{ .center = vec3.vec3(.{ 0, 0, -1 }), .radius = 0.5 } }, .material = &.{ .lambertian = .{ .albedo = vec3.vec3(@splat(1.0)) } } });
     const rec = objects.hit(&ray, .{ .max = 1000, .min = -1000 });
 
     std.debug.assert(rec.?.hit.front_face == true);
