@@ -178,7 +178,7 @@ pub fn render(
     }
     gen_noise.end();
 
-    const calculate = progress.start("calculate", self.image_height);
+    const calculate = progress.start("calculate", self.image_height * self.image_width);
 
     var wg = std.Thread.WaitGroup{};
 
@@ -190,13 +190,12 @@ pub fn render(
                 .pixel = &image_buf[y * self.image_width + x],
                 .noise = noise,
                 .cam = self,
+                .calculate = &calculate,
             };
             thread_pool.spawnWg(&wg, PoolTask.run, .{task});
         }
-        thread_pool.waitAndWork(&wg);
-        wg.reset();
-        calculate.completeOne();
     }
+    thread_pool.waitAndWork(&wg);
     calculate.end();
 }
 
@@ -218,8 +217,10 @@ const PoolTask = struct {
     pixel: *Pixel,
     noise: []const f64,
     cam: *const Camera,
+    calculate: *const std.Progress.Node,
 
     fn run(self: PoolTask) void {
+        defer self.calculate.completeOne();
         std.debug.assert(self.noise.len == self.cam.samples_per_pixel * 2);
 
         var pixel = vec3.color(@splat(0));
