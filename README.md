@@ -3,6 +3,7 @@ A small CPU ray-tracer, written in zig as a practice exersize.
 The code is heavily inspired by 
 [ray tracing in one weekend](https://raytracing.github.io/books/RayTracingInOneWeekend.html).
 
+![example image](./image.png)
 
 Outputs image to stdout in [ppm](https://en.wikipedia.org/wiki/Netpbm) binary format.
 so run
