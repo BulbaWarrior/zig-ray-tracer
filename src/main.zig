@@ -84,14 +84,14 @@ pub fn main() !void {
     var bvh_arena = std.heap.ArenaAllocator.init(ally);
     defer bvh_arena.deinit();
     const bvh_allocator = bvh_arena.allocator();
-    const world = try tracing.BvhNode.new(objects.items, bvh_allocator);
+    const world = try tracing.BvhNode.init(objects.items, bvh_allocator);
 
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
     const cam = Camera.init(.{
-        .image_width = 1280,
+        .image_width = 1920,
         .samples_per_pixel = 200,
         .max_depth = 50,
         .vfov = 60,

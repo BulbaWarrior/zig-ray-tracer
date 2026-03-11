@@ -7,7 +7,7 @@ pub const VecType = enum {
     color,
 };
 
-pub const Axis = enum {
+pub const Axis = enum(usize) {
     x,
     y,
     z,

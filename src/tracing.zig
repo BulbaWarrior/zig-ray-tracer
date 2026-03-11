@@ -58,11 +58,7 @@ pub const Bbox3D = struct {
 
     // pub fn from_extrema(min: Vec3(.arb), max: Vec3(.arb)) Bbox3D {}
     pub fn axis_bounds(self: *const Bbox3D, axis: Axis) Bounds {
-        const axis_index: usize = switch (axis) {
-            .x => 0,
-            .y => 1,
-            .z => 2,
-        };
+        const axis_index: usize = @intFromEnum(axis);
         return .{ .min = self.min[axis_index], .max = self.max[axis_index] };
     }
 
@@ -91,6 +87,19 @@ pub const Bbox3D = struct {
 
     pub fn less_then(axis: Axis, left: *const Bbox3D, right: *const Bbox3D) bool {
         return left.axis_bounds(axis).min < right.axis_bounds(axis).min;
+    }
+
+    pub fn longest_axis(self: *const Bbox3D) Axis {
+        const lengths = self.max - self.min;
+        // TODO: is this faster then looping over lenghts?
+        const max: @TypeOf(lengths) = @splat(@reduce(.Max, lengths));
+        const is_max = lengths == max;
+
+        inline for (0..3) |i| {
+            if (is_max[i]) return @enumFromInt(i);
+        }
+        // non of the values is maximal
+        unreachable;
     }
 };
 
@@ -298,7 +307,7 @@ pub const BvhNode = union(enum) {
         return res;
     }
 
-    pub fn new(bounded_objects: []Object, arena: Allocator) !BvhNode {
+    pub fn init(bounded_objects: []Object, arena: Allocator) !BvhNode {
         switch (bounded_objects.len) {
             0 => unreachable,
             1 => {
@@ -324,23 +333,25 @@ pub const BvhNode = union(enum) {
         }
 
         var bbox = Bbox3D.empty;
+        for (bounded_objects) |obj| {
+            bbox = bbox.merged(&obj.geometry.bounding_box());
+        }
+
+        const axis = bbox.longest_axis();
+
         const cmp = struct {
             fn less_then(ctx: Axis, left: Object, right: Object) bool {
                 return Bbox3D.less_then(ctx, &left.geometry.bounding_box(), &right.geometry.bounding_box());
             }
         }.less_then;
 
-        const axis = std.crypto.random.enumValue(Axis);
         std.mem.sort(Object, bounded_objects, axis, cmp);
-        for (bounded_objects) |obj| {
-            bbox = bbox.merged(&obj.geometry.bounding_box());
-        }
         const pivot = bounded_objects.len / 2;
         var nodes = try arena.alloc(BvhNode, 2);
         const left = &nodes[0];
         const right = &nodes[1];
-        left.* = try BvhNode.new(bounded_objects[0..pivot], arena);
-        right.* = try BvhNode.new(bounded_objects[pivot..], arena);
+        left.* = try BvhNode.init(bounded_objects[0..pivot], arena);
+        right.* = try BvhNode.init(bounded_objects[pivot..], arena);
         return BvhNode{
             .branch = .{
                 .left = left,
