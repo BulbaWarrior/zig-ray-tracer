@@ -7,6 +7,12 @@ pub const VecType = enum {
     color,
 };
 
+pub const Axis = enum {
+    x,
+    y,
+    z,
+};
+
 pub fn Vec3(vec_type: VecType) type {
     return struct {
         inner: @Vector(3, f64),
@@ -144,16 +150,12 @@ pub fn Vec3(vec_type: VecType) type {
             self.inner *= @splat(-1);
         }
 
-        pub fn x(self: *const Self) f64 {
-            return self.inner[0];
-        }
-
-        pub fn y(self: *const Self) f64 {
-            return self.inner[1];
-        }
-
-        pub fn z(self: *const Self) f64 {
-            return self.inner[2];
+        pub fn coord(self: *const Self, comptime axis: Axis) f64 {
+            switch (axis) {
+                .x => return self.inner[0],
+                .y => return self.inner[1],
+                .z => return self.inner[2],
+            }
         }
 
         pub fn length_squared(self: *const Self) f64 {

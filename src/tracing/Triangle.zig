@@ -6,6 +6,7 @@ const tracing = @import("../tracing.zig");
 const HitRecord = tracing.HitRecord;
 const Ray = tracing.Ray;
 const Bounds = tracing.Bounds;
+const Bbox3D = tracing.Bbox3D;
 
 const Triangle = @This();
 
@@ -56,4 +57,18 @@ pub fn hit(self: *const Triangle, ray: *const Ray, bounds: Bounds) ?HitRecord {
         .normal = norm.unit_vector(),
         .point = ray.at(t),
     };
+}
+
+pub fn bounding_box(self: *const Triangle) Bbox3D {
+    const min: @Vector(3, f64) = @min(
+        self.points[0].inner,
+        self.points[1].inner,
+        self.points[2].inner,
+    );
+    const max: @Vector(3, f64) = @max(
+        self.points[0].inner,
+        self.points[1].inner,
+        self.points[2].inner,
+    );
+    return .{ .min = min, .max = max };
 }

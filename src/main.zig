@@ -25,8 +25,9 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const ally = arena.allocator();
-    var world = tracing.Objects{ .list = .empty };
-    defer world.deinit(ally);
+
+    var objects = std.ArrayList(tracing.Object).empty;
+    defer objects.deinit(ally);
 
     const material_ground = Material{
         .lambertian = .{ .albedo = vec3(.{ 0.8, 0.8, 0.0 }) },
@@ -45,27 +46,27 @@ pub fn main() !void {
         .metal = .{ .albedo = vec3(.{ 0.8, 0.6, 0.2 }), .fuzziness = 0.05 },
     };
 
-    try world.append(ally, .{ .material = &material_ground, .geometry = .{ .sphere = .{
+    try objects.append(ally, .{ .material = &material_ground, .geometry = .{ .sphere = .{
         .center = vec3(.{ 0, -100.5, -1 }),
         .radius = 100,
     } } });
 
-    try world.append(ally, .{ .material = &material_left, .geometry = .{ .sphere = .{
+    try objects.append(ally, .{ .material = &material_left, .geometry = .{ .sphere = .{
         .center = vec3(.{ -1, 0, -1 }),
         .radius = 0.5,
     } } });
 
-    try world.append(ally, .{ .material = &material_bubble, .geometry = .{ .sphere = .{
+    try objects.append(ally, .{ .material = &material_bubble, .geometry = .{ .sphere = .{
         .center = vec3(.{ -1, 0, -1 }),
         .radius = 0.4,
     } } });
 
-    try world.append(ally, .{ .material = &material_center, .geometry = .{ .sphere = .{
+    try objects.append(ally, .{ .material = &material_center, .geometry = .{ .sphere = .{
         .center = vec3(.{ 0, 0, -1.2 }),
         .radius = 0.5,
     } } });
 
-    try world.append(ally, .{ .material = &material_right, .geometry = .{ .sphere = .{
+    try objects.append(ally, .{ .material = &material_right, .geometry = .{ .sphere = .{
         .center = vec3(.{ 1, 0, -1 }),
         .radius = 0.5,
     } } });
@@ -74,20 +75,25 @@ pub fn main() !void {
     defer teapot.deinit(ally);
 
     for (teapot.triangles.items) |tri| {
-        try world.append(ally, .{
+        try objects.append(ally, .{
             .geometry = .{ .triangle = tri },
             .material = &material_left,
         });
     }
+
+    var bvh_arena = std.heap.ArenaAllocator.init(ally);
+    defer bvh_arena.deinit();
+    const bvh_allocator = bvh_arena.allocator();
+    const world = try tracing.BvhNode.new(objects.items, bvh_allocator);
 
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
     const cam = Camera.init(.{
-        .image_width = 720,
-        .samples_per_pixel = 100,
-        .max_depth = 10,
+        .image_width = 1280,
+        .samples_per_pixel = 200,
+        .max_depth = 50,
         .vfov = 60,
         .orientation = .{
             .look_from = vec3(.{ -3, 3, 4 }),
@@ -112,9 +118,9 @@ pub fn main() !void {
         // pixel.* = pixel.add(&Vec3.random_unit().mul(0.05)).clamp(0, 1);
         pixel.linear_to_gamma();
         pixel.mut_mul(color_steps + 0.999);
-        const r: u8 = @intFromFloat(pixel.x());
-        const g: u8 = @intFromFloat(pixel.y());
-        const b: u8 = @intFromFloat(pixel.z());
+        const r: u8 = @intFromFloat(pixel.coord(.x));
+        const g: u8 = @intFromFloat(pixel.coord(.y));
+        const b: u8 = @intFromFloat(pixel.coord(.z));
         const data: [3]u8 = .{ r, g, b };
         try stdout.writeAll(&data);
     }
