@@ -83,6 +83,10 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
+    const check_exe = b.allocator.dupe(@TypeOf(exe.*), &.{exe.*}) catch @panic("OOM");
+    // also used by zls, to build on save
+    const check_step = b.step("check", "check it builds without installing");
+    check_step.dependOn(&check_exe[0].step);
     // This declares intent for the executable to be installed into the
     // install prefix when running `zig build` (i.e. when executing the default
     // step). By default the install prefix is `zig-out/` but can be overridden
@@ -142,7 +146,9 @@ pub fn build(b: *std.Build) void {
     test_step.dependOn(&run_mod_tests.step);
     test_step.dependOn(&run_exe_tests.step);
 
-    const view_step = b.step("view", "render image and open in viewer");
+    check_step.dependOn(test_step);
+
+    const view_step = b.step("view", "render image and open in viewer, also used by zls for error highlighting");
 
     const view_cmd = b.allocator.dupe(std.Build.Step.Run, &.{run_cmd.*}) catch @panic("OOM");
     const stdout = view_cmd[0].captureStdOut();
