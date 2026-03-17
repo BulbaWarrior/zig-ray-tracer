@@ -1,6 +1,6 @@
-const vector = @import("vec3.zig");
-const vec3 = vector.vec3;
-const Color = vector.Vec3(.arb);
+const vec3 = @import("vec3.zig");
+const Color = vec3.Vec3(.color);
+const color = vec3.color;
 
 const main = @import("main.zig");
 const tracing = @import("tracing.zig");
@@ -10,7 +10,7 @@ const HitRecord = tracing.HitRecord;
 const Lambertian = struct {
     albedo: Color,
     pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        var scatter_direction = hit_record.normal.add(vector.random_unit());
+        var scatter_direction = hit_record.normal.add(vec3.random_unit());
         if (scatter_direction.near_zero()) {
             scatter_direction = hit_record.normal.as(.arb);
         }
@@ -26,7 +26,7 @@ const Metal = struct {
     albedo: Color,
     fuzziness: f64,
     pub fn scatter(self: *const Metal, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        const fuzz = vector.random_unit().mul(self.fuzziness);
+        const fuzz = vec3.random_unit().mul(self.fuzziness);
         const reflected = ray_in.dir.reflect(hit_record.normal).unit_vector().as(.arb).add(fuzz);
 
         if (reflected.dot(&hit_record.normal) < 0) {
@@ -47,13 +47,10 @@ const Dielectric = struct {
     refraction_index: f64,
 
     pub fn scatter(self: *const Dielectric, ray_in: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
-        const ri: f64 = blk: {
-            if (hit_record.front_face) {
-                break :blk 1 / self.refraction_index;
-            } else {
-                break :blk self.refraction_index;
-            }
-        };
+        const ri: f64 = if (hit_record.front_face)
+            1 / self.refraction_index
+        else
+            self.refraction_index;
 
         const unit_dir = ray_in.dir.unit_vector();
         const refracted_dir = unit_dir.refract(&hit_record.normal, ri);
@@ -62,7 +59,7 @@ const Dielectric = struct {
 
             return .{
                 .scattered = refracted,
-                .attenuation = vec3(@splat(1)),
+                .attenuation = color(@splat(1)),
             };
         } else {
             const reflected = Ray{
@@ -71,7 +68,7 @@ const Dielectric = struct {
             };
             return .{
                 .scattered = reflected,
-                .attenuation = vec3(@splat(1)),
+                .attenuation = color(@splat(1)),
             };
         }
     }

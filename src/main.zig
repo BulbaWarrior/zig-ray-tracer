@@ -5,6 +5,7 @@ const Allocator = std.mem.Allocator;
 
 const vector = @import("vec3.zig");
 const vec3 = vector.vec3;
+const color = vector.color;
 
 const Vec3 = vector.Vec3;
 const Color = vector.Vec3(.color);
@@ -30,7 +31,7 @@ pub fn main() !void {
     defer objects.deinit(ally);
 
     const material_ground = Material{
-        .lambertian = .{ .albedo = vec3(.{ 0.8, 0.8, 0.0 }) },
+        .lambertian = .{ .albedo = color(.{ 0.8, 0.8, 0.0 }) },
     };
     const material_left = Material{
         .dielectric = .{ .refraction_index = 1.5 },
@@ -40,10 +41,10 @@ pub fn main() !void {
     };
 
     const material_center = Material{
-        .lambertian = .{ .albedo = vec3(.{ 0.1, 0.2, 0.5 }) },
+        .lambertian = .{ .albedo = color(.{ 0.1, 0.2, 0.5 }) },
     };
     const material_right = Material{
-        .metal = .{ .albedo = vec3(.{ 0.8, 0.6, 0.2 }), .fuzziness = 0.05 },
+        .metal = .{ .albedo = color(.{ 0.8, 0.6, 0.2 }), .fuzziness = 0.05 },
     };
 
     try objects.append(ally, .{ .material = &material_ground, .geometry = .{ .sphere = .{
@@ -71,15 +72,21 @@ pub fn main() !void {
         .radius = 0.5,
     } } });
 
-    var teapot = try Model.load(ally);
-    defer teapot.deinit(ally);
+    const points = .{ &vec3(.{ -0.5, 0, -0.5 }), &vec3(.{ 0.5, 0, -0.5 }), &vec3(.{ 0, 1, -0.5 }) };
+    try objects.append(ally, .{
+        .material = &material_right,
+        .geometry = .{ .triangle = .{ .points = points } },
+    });
 
-    for (teapot.triangles.items) |tri| {
-        try objects.append(ally, .{
-            .geometry = .{ .triangle = tri },
-            .material = &material_left,
-        });
-    }
+    // var teapot = try Model.load(ally);
+    // defer teapot.deinit(ally);
+    //
+    // for (teapot.triangles.items) |tri| {
+    //     try objects.append(ally, .{
+    //         .geometry = .{ .triangle = tri },
+    //         .material = &material_left,
+    //     });
+    // }
 
     var bvh_arena = std.heap.ArenaAllocator.init(ally);
     defer bvh_arena.deinit();
@@ -90,13 +97,16 @@ pub fn main() !void {
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
+    const builtin = @import("builtin");
     const cam = Camera.init(.{
-        .image_width = 1920,
-        .samples_per_pixel = 200,
+        .image_width = if (builtin.mode == .Debug) 480 else 720,
+        .samples_per_pixel = if (builtin.mode == .Debug) 20 else 200,
         .max_depth = 50,
-        .vfov = 60,
+        .vfov = 90,
         .orientation = .{
-            .look_from = vec3(.{ -3, 3, 4 }),
+            // .look_from = vec3(.{ -3, 3, 4 }),
+
+            .look_from = vec3(.{ 0, 0, 1 }),
             .look_at = vec3(.{ 0, 0, -1 }),
             .up = vec3(.{ 0, 1, 0 }),
         },
