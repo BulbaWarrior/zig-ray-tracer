@@ -11,11 +11,13 @@ const Vec3 = vector.Vec3;
 const Color = vector.Vec3(.color);
 
 const Material = @import("mats.zig").Material;
+const Texture = tracing.texture.Texture;
 
 const Camera = @import("Camera.zig");
 pub const tracing = @import("tracing.zig");
 
 const Model = tracing.Model;
+const Scene = @import("Scene.zig");
 
 pub fn main() !void {
     var stdout_buffer: [1024]u8 = undefined;
@@ -27,71 +29,9 @@ pub fn main() !void {
     defer arena.deinit();
     const ally = arena.allocator();
 
-    var objects = std.ArrayList(tracing.Object).empty;
-    defer objects.deinit(ally);
-
-    const material_ground = Material{
-        .lambertian = .{ .albedo = color(.{ 0.8, 0.8, 0.0 }) },
-    };
-    const material_left = Material{
-        .dielectric = .{ .refraction_index = 1.5 },
-    };
-    const material_bubble = Material{
-        .dielectric = .{ .refraction_index = 1.0 / 1.5 },
-    };
-
-    const material_center = Material{
-        .lambertian = .{ .albedo = color(.{ 0.1, 0.2, 0.5 }) },
-    };
-    const material_right = Material{
-        .metal = .{ .albedo = color(.{ 0.8, 0.6, 0.2 }), .fuzziness = 0.05 },
-    };
-
-    try objects.append(ally, .{ .material = &material_ground, .geometry = .{ .sphere = .{
-        .center = vec3(.{ 0, -100.5, -1 }),
-        .radius = 100,
-    } } });
-
-    try objects.append(ally, .{ .material = &material_left, .geometry = .{ .sphere = .{
-        .center = vec3(.{ -1, 0, -1 }),
-        .radius = 0.5,
-    } } });
-
-    try objects.append(ally, .{ .material = &material_bubble, .geometry = .{ .sphere = .{
-        .center = vec3(.{ -1, 0, -1 }),
-        .radius = 0.4,
-    } } });
-
-    try objects.append(ally, .{ .material = &material_center, .geometry = .{ .sphere = .{
-        .center = vec3(.{ 0, 0, -1.2 }),
-        .radius = 0.5,
-    } } });
-
-    try objects.append(ally, .{ .material = &material_right, .geometry = .{ .sphere = .{
-        .center = vec3(.{ 1, 0, -1 }),
-        .radius = 0.5,
-    } } });
-
-    const points = .{ &vec3(.{ -0.5, 0, -0.5 }), &vec3(.{ 0.5, 0, -0.5 }), &vec3(.{ 0, 1, -0.5 }) };
-    try objects.append(ally, .{
-        .material = &material_right,
-        .geometry = .{ .triangle = .{ .points = points } },
-    });
-
-    // var teapot = try Model.load(ally);
-    // defer teapot.deinit(ally);
-    //
-    // for (teapot.triangles.items) |tri| {
-    //     try objects.append(ally, .{
-    //         .geometry = .{ .triangle = tri },
-    //         .material = &material_left,
-    //     });
-    // }
-
-    var bvh_arena = std.heap.ArenaAllocator.init(ally);
-    defer bvh_arena.deinit();
-    const bvh_allocator = bvh_arena.allocator();
-    const world = try tracing.BvhNode.init(objects.items, bvh_allocator);
+    var scene = try Scene.checkered_spheres(ally);
+    defer scene.deinit(ally);
+    const world = scene.world;
 
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
@@ -102,12 +42,12 @@ pub fn main() !void {
         .image_width = if (builtin.mode == .Debug) 480 else 720,
         .samples_per_pixel = if (builtin.mode == .Debug) 20 else 200,
         .max_depth = 50,
-        .vfov = 90,
+        .vfov = 20,
         .orientation = .{
             // .look_from = vec3(.{ -3, 3, 4 }),
 
-            .look_from = vec3(.{ 0, 0, 1 }),
-            .look_at = vec3(.{ 0, 0, -1 }),
+            .look_from = vec3(.{ 13, 2, 3 }),
+            .look_at = vec3(.{ 0, 0, 0 }),
             .up = vec3(.{ 0, 1, 0 }),
         },
     }, &world);

@@ -11,6 +11,8 @@ const Allocator = std.mem.Allocator;
 
 pub const Model = @import("tracing/Model.zig");
 
+pub const texture = @import("tracing/texture.zig");
+
 pub const Bounds = struct {
     min: f64,
     max: f64,
@@ -107,6 +109,9 @@ pub const HitRecord = struct {
     point: Vec3(.arb),
     normal: Vec3(.unit),
     t: f64,
+    // TODO: actually compute
+    u: f64 = 0,
+    v: f64 = 0,
     front_face: bool,
 };
 

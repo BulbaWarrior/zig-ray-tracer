@@ -8,7 +8,7 @@ const Ray = tracing.Ray;
 const HitRecord = tracing.HitRecord;
 
 const Lambertian = struct {
-    albedo: Color,
+    texture: *const tracing.texture.Texture,
     pub fn scatter(self: *const Lambertian, _: *const Ray, hit_record: *const HitRecord) ?Material.ScatterRecord {
         var scatter_direction = hit_record.normal.add(vec3.random_unit());
         if (scatter_direction.near_zero()) {
@@ -17,7 +17,7 @@ const Lambertian = struct {
 
         return .{
             .scattered = .{ .orig = hit_record.point, .dir = scatter_direction },
-            .attenuation = self.albedo,
+            .attenuation = self.texture.value(hit_record.u, hit_record.v, hit_record.point),
         };
     }
 };
