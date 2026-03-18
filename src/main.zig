@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const ray_tracing = @import("ray_tracing");
 
 const Allocator = std.mem.Allocator;
@@ -27,7 +28,7 @@ pub fn main() !void {
     defer arena.deinit();
     const ally = arena.allocator();
 
-    var objects = std.ArrayList(tracing.Object).empty;
+    var objects = tracing.Objects.empty;
     defer objects.deinit(ally);
 
     const material_ground = Material{
@@ -72,41 +73,65 @@ pub fn main() !void {
         .radius = 0.5,
     } } });
 
-    const points = .{ &vec3(.{ -0.5, 0, -0.5 }), &vec3(.{ 0.5, 0, -0.5 }), &vec3(.{ 0, 1, -0.5 }) };
-    try objects.append(ally, .{
-        .material = &material_right,
-        .geometry = .{ .triangle = .{ .points = points } },
-    });
+    // const points = .{ &vec3(.{ -0.5, 0, -0.5 }), &vec3(.{ 0.5, 0, -0.5 }), &vec3(.{ 0, 1, -0.5 }) };
+    // try objects.append(ally, .{
+    //     .material = &material_right,
+    //     .geometry = .{ .triangle = .{ .points = points } },
+    // });
 
-    // var teapot = try Model.load(ally);
-    // defer teapot.deinit(ally);
-    //
-    // for (teapot.triangles.items) |tri| {
-    //     try objects.append(ally, .{
-    //         .geometry = .{ .triangle = tri },
-    //         .material = &material_left,
-    //     });
-    // }
+    var teapot = try Model.load(ally);
+    defer teapot.deinit(ally);
+
+    for (teapot.triangles.items) |tri| {
+        try objects.append(ally, .{
+            .geometry = .{ .triangle = tri },
+            .material = &material_left,
+        });
+    }
 
     var bvh_arena = std.heap.ArenaAllocator.init(ally);
     defer bvh_arena.deinit();
     const bvh_allocator = bvh_arena.allocator();
-    const world = try tracing.BvhNode.init(objects.items, bvh_allocator);
+    var ids = try bvh_allocator.alloc(tracing.Objects.Id, objects.list.len);
+    for (0..objects.list.len) |i| {
+        ids[i] = @enumFromInt(i);
+    }
+    var objects_slice = objects.list.slice();
+    for (ids, 0..) |id, dst| {
+        if (@intFromEnum(id) == dst) continue;
+        const to_swap = objects_slice.get(@intFromEnum(id));
+        const object = objects_slice.get(dst);
+        objects_slice.set(dst, to_swap);
+        objects_slice.set(@intFromEnum(id), object);
+        ids[dst] = id;
+        ids[@intFromEnum(id)] = @enumFromInt(dst);
+    }
+
+    if (builtin.mode == .Debug) {
+        for (ids, 0..) |id, expected| {
+            std.debug.assert(@intFromEnum(id) == expected);
+        }
+    }
+
+    const world_root = try tracing.BvhNode.init(objects_slice, ids, bvh_allocator);
+    const world = tracing.Bvh{
+        .root = &world_root,
+        .objects = objects_slice,
+    };
 
     var thread_pool: std.Thread.Pool = undefined;
     try thread_pool.init(.{ .allocator = ally });
     defer thread_pool.deinit();
 
-    const builtin = @import("builtin");
     const cam = Camera.init(.{
         .image_width = if (builtin.mode == .Debug) 480 else 720,
         .samples_per_pixel = if (builtin.mode == .Debug) 20 else 200,
         .max_depth = 50,
         .vfov = 90,
         .orientation = .{
-            // .look_from = vec3(.{ -3, 3, 4 }),
+            .look_from = vec3(.{ -3, 3, 4 }),
 
-            .look_from = vec3(.{ 0, 0, 1 }),
+            // .look_from = vec3(.{ 0, 0, 1 }),
             .look_at = vec3(.{ 0, 0, -1 }),
             .up = vec3(.{ 0, 1, 0 }),
         },

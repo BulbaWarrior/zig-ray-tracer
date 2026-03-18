@@ -5,7 +5,7 @@ const Vec3 = vec3.Vec3;
 const Pixel = Vec3(.color);
 
 const tracing = @import("tracing.zig");
-const BvhNode = tracing.BvhNode;
+const Bvh = tracing.Bvh;
 
 const Objects = tracing.Objects;
 const Ray = tracing.Ray;
@@ -49,7 +49,7 @@ viewport: Viewport,
 pixel: PixelMeta,
 frame_basis: FrameBasis,
 defocus_disk: DefocusDisk,
-world: *const BvhNode,
+world: *const Bvh,
 
 const DefocusDisk = struct {
     /// horizontal radius
@@ -81,7 +81,7 @@ const Viewport = struct {
     top_left: Vec3(.arb),
 };
 
-pub fn init(options: CameraOptions, world: *const BvhNode) Camera {
+pub fn init(options: CameraOptions, world: *const Bvh) Camera {
     const orientation = options.orientation;
 
     const image_width_f: f64 = @floatFromInt(options.image_width);

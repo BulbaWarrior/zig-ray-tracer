@@ -119,7 +119,7 @@ pub const Ray = struct {
         return self.orig.add(self.dir.mul(t));
     }
 
-    pub fn color(self: *const Ray, max_depth: usize, world: *const BvhNode) Vec3(.color) {
+    pub fn color(self: *const Ray, max_depth: usize, world: *const Bvh) Vec3(.color) {
         if (max_depth <= 0) {
             return vec3.color(@splat(0));
         }
@@ -226,6 +226,9 @@ pub const Objects = struct {
     list: std.MultiArrayList(Object),
     bbox: Bbox3D,
 
+    pub const Id = enum(usize) { _ };
+    pub const Slice = std.MultiArrayList(Object).Slice;
+
     pub const empty: Objects = .{
         .list = .empty,
         .bbox = .empty,
@@ -272,8 +275,15 @@ pub const Objects = struct {
     }
 };
 
+pub const Bvh = struct {
+    root: *const BvhNode,
+    objects: Objects.Slice,
+    pub fn hit(self: Bvh, ray: *const Ray, bounds: Bounds) ?BvhNode.Hit {
+        return self.root.hit(self.objects, ray, bounds);
+    }
+};
 pub const BvhNode = union(enum) {
-    leaf: *const Object,
+    leaf: Objects.Id,
     branch: struct {
         left: *const BvhNode,
         right: *const BvhNode,
@@ -285,10 +295,11 @@ pub const BvhNode = union(enum) {
         material: *const Material,
     };
 
-    pub fn hit(self: BvhNode, ray: *const Ray, bounds: Bounds) ?Hit {
+    pub fn hit(self: BvhNode, objects: Objects.Slice, ray: *const Ray, bounds: Bounds) ?Hit {
         var res: ?Hit = null;
         switch (self) {
-            .leaf => |object| {
+            .leaf => |obj_id| {
+                const object = objects.get(@intFromEnum(obj_id));
                 if (object.geometry.hit(ray, bounds)) |rec| return .{
                     .hit = rec,
                     .material = object.material,
@@ -297,30 +308,31 @@ pub const BvhNode = union(enum) {
             .branch => |branch| {
                 if (!branch.bbox.hit(ray, bounds)) return null;
                 var ray_bounds = bounds;
-                if (branch.left.hit(ray, bounds)) |left_hit| {
+                if (branch.left.hit(objects, ray, bounds)) |left_hit| {
                     res = left_hit;
                     ray_bounds.max = left_hit.hit.t;
                 }
-                if (branch.right.hit(ray, ray_bounds)) |right_hit| return right_hit;
+                if (branch.right.hit(objects, ray, ray_bounds)) |right_hit| return right_hit;
             },
         }
         return res;
     }
 
-    pub fn init(bounded_objects: []Object, arena: Allocator) !BvhNode {
+    pub fn init(objects: Objects.Slice, bounded_objects: []Objects.Id, arena: Allocator) !BvhNode {
         switch (bounded_objects.len) {
             0 => unreachable,
             1 => {
-                return .{ .leaf = &bounded_objects[0] };
+                return .{ .leaf = bounded_objects[0] };
             },
             2 => {
                 const leaves = try arena.alloc(BvhNode, 2);
                 const left = &leaves[0];
                 const right = &leaves[1];
-                left.* = .{ .leaf = &bounded_objects[0] };
-                right.* = .{ .leaf = &bounded_objects[1] };
+                left.* = .{ .leaf = bounded_objects[0] };
+                right.* = .{ .leaf = bounded_objects[1] };
 
-                const bbox = left.leaf.geometry.bounding_box().merged(&right.leaf.geometry.bounding_box());
+                const bbox = objects.get(@intFromEnum(left.leaf)).geometry.bounding_box()
+                    .merged(&objects.get(@intFromEnum(right.leaf)).geometry.bounding_box());
                 return .{
                     .branch = .{
                         .left = left,
@@ -333,25 +345,31 @@ pub const BvhNode = union(enum) {
         }
 
         var bbox = Bbox3D.empty;
-        for (bounded_objects) |obj| {
-            bbox = bbox.merged(&obj.geometry.bounding_box());
+        for (bounded_objects) |obj_id| {
+            bbox = bbox.merged(&objects.get(@intFromEnum(obj_id)).geometry.bounding_box());
         }
 
         const axis = bbox.longest_axis();
 
+        const Ctx = struct {
+            axis: Axis,
+            objects: Objects.Slice,
+        };
         const cmp = struct {
-            fn less_then(ctx: Axis, left: Object, right: Object) bool {
-                return Bbox3D.less_then(ctx, &left.geometry.bounding_box(), &right.geometry.bounding_box());
+            fn less_then(ctx: Ctx, left: Objects.Id, right: Objects.Id) bool {
+                const left_bb = ctx.objects.get(@intFromEnum(left)).geometry.bounding_box();
+                const right_bb = ctx.objects.get(@intFromEnum(right)).geometry.bounding_box();
+                return Bbox3D.less_then(ctx.axis, &left_bb, &right_bb);
             }
         }.less_then;
 
-        std.mem.sort(Object, bounded_objects, axis, cmp);
+        std.mem.sort(Objects.Id, bounded_objects, Ctx{ .axis = axis, .objects = objects }, cmp);
         const pivot = bounded_objects.len / 2;
         var nodes = try arena.alloc(BvhNode, 2);
         const left = &nodes[0];
         const right = &nodes[1];
-        left.* = try BvhNode.init(bounded_objects[0..pivot], arena);
-        right.* = try BvhNode.init(bounded_objects[pivot..], arena);
+        left.* = try BvhNode.init(objects, bounded_objects[0..pivot], arena);
+        right.* = try BvhNode.init(objects, bounded_objects[pivot..], arena);
         return BvhNode{
             .branch = .{
                 .left = left,
