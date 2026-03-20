@@ -5,12 +5,13 @@ const Vec3 = vec3.Vec3;
 pub const Texture = union(enum) {
     solid_color: SolidColor,
     checker: Checker,
+    gradient: Gradient,
 
-    pub fn value(self: Texture, u: f64, v: f64, point: Vec3(.arb)) Vec3(.color) {
-        switch (self) {
+    pub fn value(self: *const Texture, u: f64, v: f64, point: Vec3(.arb)) Vec3(.color) {
+        switch (self.*) {
             // tex is runtime-known variant of texture, tag is comtime-known
             // so this is static dispatch on all Texture variants
-            inline else => |tex, tag| {
+            inline else => |*tex, tag| {
                 _ = tag;
                 return tex.value(u, v, point);
             },
@@ -40,5 +41,12 @@ pub const Checker = struct {
             self.even.value(u, v, point)
         else
             self.odd.value(u, v, point);
+    }
+};
+
+pub const Gradient = struct {
+    fn value(self: *const Gradient, u: f64, v: f64, point: Vec3(.arb)) Vec3(.color) {
+        _ = .{ self, point };
+        return vec3.color(.{ u, v, 0 });
     }
 };

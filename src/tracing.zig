@@ -110,8 +110,8 @@ pub const HitRecord = struct {
     normal: Vec3(.unit),
     t: f64,
     // TODO: actually compute
-    u: f64 = 0,
-    v: f64 = 0,
+    u: f64 = undefined,
+    v: f64 = undefined,
     front_face: bool,
 };
 
@@ -176,7 +176,24 @@ pub const Ray = struct {
         if (!front_face) {
             normal.reverse();
         }
-        return HitRecord{ .t = root, .normal = normal, .point = hit_point, .front_face = front_face };
+
+        // spherical coordinates,
+        // fun fact: did you notice that phi (ϕ) and theta (θ) depict
+        // longitude and latitude on a small globe?
+        const phi = std.math.atan2(normal.coord(.z), -normal.coord(.x)) + std.math.pi;
+        const theta = std.math.acos(-normal.coord(.y));
+        const u = phi / (2 * std.math.pi);
+        const v = theta / std.math.pi;
+        std.debug.assert(0 <= u and u <= 1);
+        std.debug.assert(0 <= v and v <= 1);
+        return HitRecord{
+            .t = root,
+            .normal = normal,
+            .point = hit_point,
+            .front_face = front_face,
+            .u = u,
+            .v = v,
+        };
     }
 };
 const Sphere = struct {

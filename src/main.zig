@@ -42,12 +42,12 @@ pub fn main() !void {
         .image_width = if (builtin.mode == .Debug) 480 else 720,
         .samples_per_pixel = if (builtin.mode == .Debug) 20 else 200,
         .max_depth = 50,
-        .vfov = 20,
+        .vfov = 70,
         .orientation = .{
             // .look_from = vec3(.{ -3, 3, 4 }),
 
-            .look_from = vec3(.{ 13, 2, 3 }),
-            .look_at = vec3(.{ 0, 0, 0 }),
+            .look_from = vec3(.{ 10, -25, 0 }),
+            .look_at = vec3(.{ 0, -10, 0 }),
             .up = vec3(.{ 0, 1, 0 }),
         },
     }, &world);

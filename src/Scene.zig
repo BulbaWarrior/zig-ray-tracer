@@ -130,12 +130,13 @@ pub fn checkered_spheres(gpa: std.mem.Allocator) !Scene {
     errdefer stuff_arena.deinit();
     const stuff = stuff_arena.allocator();
 
-    const checkered = try new(stuff, Texture{ .checker = .{
-        .scale = 0.32,
-        .even = try new(stuff, Texture{ .solid_color = .{ .albedo = color(.{ 0.2, 0.3, 0.1 }) } }),
-        .odd = try new(stuff, Texture{ .solid_color = .{ .albedo = color(.{ 0.9, 0.9, 0.9 }) } }),
-    } });
-    const mat = try new(stuff, Material{ .lambertian = .{ .texture = checkered } });
+    // const checkered = try new(stuff, Texture{ .checker = .{
+    //     .scale = 0.32,
+    //     .even = try new(stuff, Texture{ .solid_color = .{ .albedo = color(.{ 0.2, 0.3, 0.1 }) } }),
+    //     .odd = try new(stuff, Texture{ .solid_color = .{ .albedo = color(.{ 0.9, 0.9, 0.9 }) } }),
+    // } });
+    const grad = try new(stuff, Texture{ .gradient = .{} });
+    const mat = try new(stuff, Material{ .lambertian = .{ .texture = grad } });
 
     var objects = ArrayList(tracing.Object).empty;
     try objects.append(gpa, .{

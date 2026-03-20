@@ -238,6 +238,8 @@ pub fn vec3(inner: @Vector(3, f64)) Vec3(.arb) {
 }
 
 pub fn color(inner: @Vector(3, f64)) Vec3(.color) {
+    // all color components must be in [0, 1]
+    std.debug.assert(@reduce(.And, inner <= @as(@TypeOf(inner), @splat(1))));
     return .{
         .inner = inner,
     };
