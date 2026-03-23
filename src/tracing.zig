@@ -173,19 +173,19 @@ pub const Ray = struct {
         var normal = hit_point.sub(sphere.center).div(sphere.radius).as(.unit);
         const front_face = ray.dir.dot(&normal) < 0;
 
-        if (!front_face) {
-            normal.reverse();
-        }
-
         // spherical coordinates,
         // fun fact: did you notice that phi (ϕ) and theta (θ) depict
         // longitude and latitude on a small globe?
-        const phi = std.math.atan2(normal.coord(.z), -normal.coord(.x)) + std.math.pi;
+        const phi = std.math.atan2(-normal.coord(.z), normal.coord(.x)) + std.math.pi;
         const theta = std.math.acos(-normal.coord(.y));
         const u = phi / (2 * std.math.pi);
         const v = theta / std.math.pi;
         std.debug.assert(0 <= u and u <= 1);
         std.debug.assert(0 <= v and v <= 1);
+
+        if (!front_face) {
+            normal.reverse();
+        }
         return HitRecord{
             .t = root,
             .normal = normal,

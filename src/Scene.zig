@@ -125,31 +125,22 @@ pub fn spheres(gpa: std.mem.Allocator) !Scene {
     };
 }
 
-pub fn checkered_spheres(gpa: std.mem.Allocator) !Scene {
+pub fn globe(gpa: std.mem.Allocator) !Scene {
     var stuff_arena = std.heap.ArenaAllocator.init(gpa);
     errdefer stuff_arena.deinit();
     const stuff = stuff_arena.allocator();
 
-    // const checkered = try new(stuff, Texture{ .checker = .{
-    //     .scale = 0.32,
-    //     .even = try new(stuff, Texture{ .solid_color = .{ .albedo = color(.{ 0.2, 0.3, 0.1 }) } }),
-    //     .odd = try new(stuff, Texture{ .solid_color = .{ .albedo = color(.{ 0.9, 0.9, 0.9 }) } }),
-    // } });
-    const grad = try new(stuff, Texture{ .gradient = .{} });
-    const mat = try new(stuff, Material{ .lambertian = .{ .texture = grad } });
+    var earth_image = try tracing.texture.Image.load(gpa, "earthmap.jpg");
+    errdefer earth_image.deinit(gpa);
+    const earth_texture = try new(stuff, Texture{ .image = earth_image });
+    const earth_material = try new(stuff, Material{ .lambertian = .{ .texture = earth_texture } });
 
     var objects = ArrayList(tracing.Object).empty;
     try objects.append(gpa, .{
         .geometry = .{
-            .sphere = .{ .center = vec3(.{ 0, -10, 0 }), .radius = 10 },
+            .sphere = .{ .center = vec3(.{ 0, 0, 0 }), .radius = 2 },
         },
-        .material = mat,
-    });
-    try objects.append(gpa, .{
-        .geometry = .{
-            .sphere = .{ .center = vec3(.{ 0, 10, 0 }), .radius = 10 },
-        },
-        .material = mat,
+        .material = earth_material,
     });
 
     var bvh_arena = std.heap.ArenaAllocator.init(gpa);

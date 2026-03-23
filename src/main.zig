@@ -19,6 +19,8 @@ pub const tracing = @import("tracing.zig");
 const Model = tracing.Model;
 const Scene = @import("Scene.zig");
 
+const zstbi = @import("zstbi");
+
 pub fn main() !void {
     var stdout_buffer: [1024]u8 = undefined;
     var stdout_writer = std.fs.File.stdout().writer(&stdout_buffer);
@@ -28,8 +30,10 @@ pub fn main() !void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
     const ally = arena.allocator();
+    zstbi.init(ally);
+    defer zstbi.deinit();
 
-    var scene = try Scene.checkered_spheres(ally);
+    var scene = try Scene.globe(ally);
     defer scene.deinit(ally);
     const world = scene.world;
 
@@ -42,12 +46,12 @@ pub fn main() !void {
         .image_width = if (builtin.mode == .Debug) 480 else 720,
         .samples_per_pixel = if (builtin.mode == .Debug) 20 else 200,
         .max_depth = 50,
-        .vfov = 70,
+        .vfov = 20,
         .orientation = .{
             // .look_from = vec3(.{ -3, 3, 4 }),
 
-            .look_from = vec3(.{ 10, -25, 0 }),
-            .look_at = vec3(.{ 0, -10, 0 }),
+            .look_from = vec3(.{ 0, 0, 12 }),
+            .look_at = vec3(.{ 0, 0, 0 }),
             .up = vec3(.{ 0, 1, 0 }),
         },
     }, &world);
